@@ -4,7 +4,7 @@
 // @description Relatório de ponto eletrônico
 // @require     https://code.jquery.com/jquery-2.1.1.min.js
 // @include     http://apl.jfpr.gov.br/pe/App_View/relatorio_1.aspx
-// @version     1
+// @version     2
 // @grant       none
 // ==/UserScript==
 var button = $('<button>') .html('Analisar') .on('click', function (ev) {
@@ -76,3 +76,4 @@ function preencherDiferenca(celula, tempoEfetivo, tempoEsperado) {
     celula.css('font-weight', 'bold');
   }
 }
+alert('Clique no botão "Analisar" após o carregamento dos dados do relatório.');
