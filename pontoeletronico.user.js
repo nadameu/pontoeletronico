@@ -4,76 +4,138 @@
 // @description Relatório de ponto eletrônico
 // @require     https://code.jquery.com/jquery-2.1.1.min.js
 // @include     http://apl.jfpr.gov.br/pe/App_View/relatorio_1.aspx
-// @version     2
+// @version     3
 // @grant       none
 // ==/UserScript==
-var button = $('<button>') .html('Analisar') .on('click', function (ev) {
-  ev.preventDefault();
-  var jornada = $('#ctl00_ContentPlaceHolder1_lblJornR') .get(0) .textContent;
-  var [hour,
-  minute,
-  second] = jornada.split(':');
-  jornada = (new Date(0, 0, 0, hour, minute, second)) - (new Date(0, 0, 0, 0, 0, 0));
-  var periodoEmAberto = false,
-  dataAnterior = '0',
-  soma = 0,
-  timestampAnterior,
-  celulaAnterior;
-  $('#ctl00_ContentPlaceHolder1_GridView1 tbody tr') .each(function (i, row) {
-    if (row.cells[0].tagName.toLowerCase() == 'th') return ;
-    var registro = row.cells[0].textContent;
-    var tipo = row.cells[2].textContent;
-    var [day,
-    month,
-    year,
-    hour,
-    minute,
-    second] = registro.split(/[\/ :]/);
-    var timestamp = new Date(year, month - 1, day, hour, minute, second);
-    var date = timestamp.toLocaleDateString();
-    if (date != dataAnterior) {
-      row.style.borderTop = '2px solid black';
-      periodoEmAberto = false;
-      if (celulaAnterior) {
-        preencherDiferenca(celulaAnterior, soma, jornada);
+var MINUTOS_DE_TOLERANCIA = 15;
+function analisar() {
+  var jornada = obterJornada();
+  var faltas = obterFaltas();
+  var registroAnterior = {
+    timestamp: null,
+    data: null,
+    tipo: 'S',
+    celula: null
+  },
+  ultimaEntrada,
+  somaParcial = 0 - jornada.valueOf(),
+  somaTotal = 0 - (faltas * jornada);
+  var linhas = $('#ctl00_ContentPlaceHolder1_GridView1 tbody tr').has('td');
+  var numLinha = 0;
+  var linha = linhas.get(numLinha);
+  var registro = linhaParaRegistro(linha);
+  do {
+    if (registroAnterior.tipo == 'S') {
+      if (registro.tipo == 'S') {
+        linha.cells[2].style.background = 'red';
+        linha.cells[2].style.color = 'white';
+        registro.tipo = 'E';
       }
-      soma = 0;
+      ultimaEntrada = registro.timestamp.valueOf();
+    } else if (registroAnterior.tipo == 'E') {
+      if (registro.tipo == 'E') {
+        linha.cells[2].style.background = 'red';
+        linha.cells[2].style.color = 'white';
+        registro.tipo = 'S';
+      }
+      somaParcial += registro.timestamp.valueOf() - ultimaEntrada;
     }
-    var newCell = $('<td></td>');
-    if (((!periodoEmAberto) && tipo == 'Saída') || (periodoEmAberto && tipo == 'Entrada')) {
-      newCell.html('Erro!') .css({
-        'background-color': 'red',
-        'color': 'white'
-      });
-    } else if (periodoEmAberto) {
-      soma += timestamp - timestampAnterior;
+    var ultimaLinhaDoDia = false;
+    try {
+      var proximaLinha = linhas.get(++numLinha);
+      var proximoRegistro = linhaParaRegistro(proximaLinha);
+      ultimaLinhaDoDia = registro.data != proximoRegistro.data;
+    } catch (e) {
+      // Nao ha mais linhas
+      ultimaLinhaDoDia = true;
     }
-    $(row) .append(newCell);
-    periodoEmAberto = (tipo == 'Entrada');
-    dataAnterior = date;
-    timestampAnterior = timestamp;
-    celulaAnterior = newCell;
-  });
-  preencherDiferenca(celulaAnterior, soma, jornada);
-});
-$('#ctl00_ctl02') .before(button);
-function preencherDiferenca(celula, tempoEfetivo, tempoEsperado) {
-  var diff = (tempoEfetivo - tempoEsperado) / 1000 / 60;
-  var symbol = diff / Math.abs(diff);
-  diff = Math.abs(diff);
-  var hour = Math.floor(diff / 60);
-  var minute = Math.floor(diff % 60);
-  while (minute.toString() .length < 2) {
-    minute = '0' + minute;
-  }
-  celula.html((symbol < 0 ? '-' : '') + hour + ':' + minute);
-  if (symbol < 0) {
-    celula.css('color', 'red');
-  } else {
-    celula.css('color', 'green');
-  }
-  if (diff > 15) {
-    celula.css('font-weight', 'bold');
-  }
+    if (ultimaLinhaDoDia) {
+      linha.style.borderBottom = '2px solid black';
+      var minutos = milissegundosParaMinutos(somaParcial);
+      registro.celula.textContent = formatarMinutos(minutos);
+      registro.celula.style.color = (minutos < 0) ? 'red' : 'green';
+      if (Math.abs(minutos) >= MINUTOS_DE_TOLERANCIA) {
+        registro.celula.style.textDecoration = 'none';
+        registro.celula.style.fontWeight = 'bold';
+        somaTotal += somaParcial;
+      } else {
+        registro.celula.style.textDecoration = 'line-through';
+        registro.celula.style.fontWeight = 'normal';
+      }
+      if (registro.tipo == 'E') {
+        registro.celula.style.background = 'red';
+        registro.celula.style.color = 'white';
+        registro.tipo = 'S';
+      }
+      somaParcial = 0 - jornada.valueOf();
+    }
+    registroAnterior = registro;
+    registro = proximoRegistro;
+    linha = proximaLinha;
+  } while (numLinha < linhas.size());
+  var saldo = $('#ctl00_ContentPlaceHolder1_lblSalR');
+  saldo.html(formatarMinutos(milissegundosParaMinutos(somaTotal))).css('color', (somaTotal < 0) ? 'red' : 'green');
+  saldo.parent().html(saldo);
+  saldo.after('<br/><span style="font-size: 0.8em;"> (ignorando diferenças inferiores a ' + MINUTOS_DE_TOLERANCIA + ' minutos de tolerância).</span>');
 }
-alert('Clique no botão "Analisar" após o carregamento dos dados do relatório.');
+function obterJornada() {
+  var texto = $('#ctl00_ContentPlaceHolder1_lblJornR').get(0).textContent;
+  var valor = textoParaData('01/01/2001 ' + texto) - textoParaData('01/01/2001 00:00:00');
+  return valor;
+}
+function obterFaltas() {
+  var texto = $('#ctl00_ContentPlaceHolder1_lblFaltasR').get(0).textContent;
+  var valor = Number(texto);
+  return valor;
+}
+function linhaParaRegistro(linha) {
+  var registro = {
+    timestamp: textoParaData(linha.cells[0].textContent),
+    tipo: (linha.cells[2].textContent == 'Entrada') ? 'E' : 'S'
+  };
+  registro.data = registro.timestamp.toISOString().substr(0, 10);
+  registro.celula = $('.resultado', linha);
+  if (registro.celula.size() == 1) {
+    registro.celula = registro.celula.get(0);
+  } else {
+    registro.celula = $('<td class="resultado"></td>').get(0);
+    $(linha).append(registro.celula);
+  }
+  return registro;
+}
+function textoParaData(texto) {
+  var [d,
+  m,
+  y,
+  h,
+  i,
+  s] = texto.split(/[ :\/]/g);
+  var data = new Date(y, m - 1, d, h, i, s, 0);
+  return data;
+}
+function milissegundosParaMinutos(ms) {
+  return Math.round(ms / 1000 / 60);
+}
+function formatarMinutos(minutos) {
+  var minutosAbsoluto = Math.abs(minutos);
+  var sinal = minutos / minutosAbsoluto;
+  var h = Math.floor(minutosAbsoluto / 60);
+  var m = Math.floor(minutosAbsoluto % 60);
+  while (m.toString().length < 2) {
+    m = '0' + m;
+  }
+  return (sinal < 0 ? '-' : '') + [h,
+  m].join(':');
+}
+var botao = criarBotao();
+anexarBotaoAoMenu(botao);
+function criarBotao() {
+  return $('<button></button>').html('Analisar').on('click', function (ev) {
+    ev.preventDefault();
+    analisar();
+  });
+}
+function anexarBotaoAoMenu(botao) {
+  var menu = $('#ctl00_ctl02');
+  menu.before(botao);
+}
