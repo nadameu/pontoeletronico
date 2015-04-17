@@ -4,7 +4,7 @@
 // @description Relatório de ponto eletrônico
 // @require     https://code.jquery.com/jquery-2.1.1.min.js
 // @include     http://apl.jfpr.gov.br/pe/App_View/relatorio_1.aspx
-// @version     3
+// @version     4
 // @grant       none
 // ==/UserScript==
 var MINUTOS_DE_TOLERANCIA = 15;
@@ -93,7 +93,16 @@ function linhaParaRegistro(linha) {
     timestamp: textoParaData(linha.cells[0].textContent),
     tipo: (linha.cells[2].textContent == 'Entrada') ? 'E' : 'S'
   };
-  registro.data = registro.timestamp.toISOString().substr(0, 10);
+  var dia = registro.timestamp.getDate() .toString();
+  var mes = (registro.timestamp.getMonth() + 1) .toString();
+  var ano = registro.timestamp.getFullYear() .toString();
+  while (dia.length < 2) {
+    dia = '0' + dia;
+  }
+  while (mes.length < 2) {
+    mes = '0' + mes;
+  }
+  registro.data = [ano, mes, dia].join('-');
   registro.celula = $('.resultado', linha);
   if (registro.celula.size() == 1) {
     registro.celula = registro.celula.get(0);
