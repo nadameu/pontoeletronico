@@ -4,7 +4,7 @@
 // @description Relatório de ponto eletrônico
 // @require     https://code.jquery.com/jquery-2.1.1.min.js
 // @include     http://apl.jfpr.gov.br/pe/App_View/relatorio_1.aspx
-// @version     5
+// @version     6
 // @grant       none
 // ==/UserScript==
 var MINUTOS_DE_TOLERANCIA = 15;
@@ -240,18 +240,6 @@ function formatarMinutos(minutos) {
   return (sinal < 0 ? '-' : '') + [h,
   m].join(':');
 }
-var botao = criarBotao();
-anexarBotaoAoMenu(botao);
-function criarBotao() {
-  return $('<button></button>') .html('Analisar') .on('click', function (ev) {
-    ev.preventDefault();
-    analisar();
-  });
-}
-function anexarBotaoAoMenu(botao) {
-  var menu = $('#ctl00_ctl02');
-  menu.before(botao);
-}
 function ehFeriado(registro) {
   if (registro.timestamp.getDay() == 0 || registro.timestamp.getDay() == 6) {
     return true;
@@ -270,3 +258,22 @@ function ehFeriado(registro) {
   }
   return false;
 }
+
+let oldXHR = window.XMLHttpRequest;
+window.XMLHttpRequest = function() {
+  var xhr = new oldXHR();
+  xhr.send = function() {
+    var oldfn = xhr.onreadystatechange;
+    xhr.onreadystatechange = function() {
+      oldfn.apply(xhr, arguments);
+      if (xhr.readyState === 4) {
+        var parts = xhr.responseText.split('|');
+        if (parts[2] === 'ctl00_ContentPlaceHolder1_UpdatePanel1') {
+          analisar();
+        }
+      }
+    };
+    return oldXHR.prototype.send.apply(xhr, arguments);
+  }
+  return xhr;
+};
