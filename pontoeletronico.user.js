@@ -4,53 +4,13 @@
 // @description Relatório de ponto eletrônico
 // @require     https://code.jquery.com/jquery-2.1.1.min.js
 // @include     http://apl.jfpr.gov.br/pe/App_View/relatorio_1.aspx
-// @version     6
+// @version     7
 // @grant       none
 // ==/UserScript==
 var MINUTOS_DE_TOLERANCIA = 15;
-var FERIADOS = {
-  '*': [
-    '01/01',
-    '02/01',
-    '03/01',
-    '04/01',
-    '05/01',
-    '06/01',
-    '02/02',
-    '21/04',
-    '01/05',
-    '11/08',
-    '07/09',
-    '12/10',
-    '28/10',
-    '01/11',
-    '02/11',
-    '20/11',
-    '08/12',
-    '09/12',
-    '20/12',
-    '21/12',
-    '22/12',
-    '23/12',
-    '24/12',
-    '25/12',
-    '26/12',
-    '27/12',
-    '28/12',
-    '29/12',
-    '30/12',
-    '31/12'
-  ],
-  '2015': [
-    '16/02',
-    '17/02',
-    '01/04',
-    '02/04',
-    '03/04',
-    '04/06'
-  ]
-};
-function analisar() {
+var FERIADOS = [
+];
+function analisarRegistros() {
   var jornada = obterJornada();
   var faltas = obterFaltas();
   var diasUteis = obterDiasUteis();
@@ -189,24 +149,12 @@ function analisarValorTrabalhados(texto) {
   }
 }
 function linhaParaRegistro(linha) {
+  var timestamp = textoParaData(linha.cells[0].textContent);
   var registro = {
-    timestamp: textoParaData(linha.cells[0].textContent),
+    data: timestamp.toLocaleFormat('%Y-%m-%d'),
+    timestamp: timestamp,
     tipo: (linha.cells[2].textContent == 'Entrada') ? 'E' : 'S'
   };
-  var dia = registro.timestamp.getDate() .toString();
-  var mes = (registro.timestamp.getMonth() + 1) .toString();
-  var ano = registro.timestamp.getFullYear() .toString();
-  while (dia.length < 2) {
-    dia = '0' + dia;
-  }
-  while (mes.length < 2) {
-    mes = '0' + mes;
-  }
-  registro.data = [
-    ano,
-    mes,
-    dia
-  ].join('-');
   registro.celula = $('.resultado', linha);
   if (registro.celula.size() == 1) {
     registro.celula = registro.celula.get(0);
@@ -240,36 +188,53 @@ function formatarMinutos(minutos) {
   return (sinal < 0 ? '-' : '') + [h,
   m].join(':');
 }
+function analisarFeriados() {
+  analisarCalendario('ctl00_ContentPlaceHolder1_Calendar1');
+  analisarCalendario('ctl00_ContentPlaceHolder1_Calendar2');
+}
+function analisarCalendario(id) {
+  var tabela = $('#' + id);
+  var nomeMes;
+  tabela.find('td[style*="width:70%"]') .each(function (indiceCelula, celula) {
+    nomeMes = celula.textContent;
+  });
+  var mesAtual;
+  tabela.find('a[title="Go to the previous month"]') .each(function (indiceLink, link) {
+    var diasMesAnteriorDesdeDoisMil = Number(link.href.match(/,'V(\d+)'\)/) [1]);
+    var mesAnterior = new Date(2000, 0, 1 + diasMesAnteriorDesdeDoisMil, 0, 0, 0, 0);
+    mesAtual = new Date(mesAnterior.getFullYear(), mesAnterior.getMonth() + 1, 1);
+  });
+  tabela.find('td[style*="width:14%"]') .has('a[title$=" de ' + nomeMes + '"]') .each(function (indiceCelula, celula) {
+    if (celula.style.color === 'Red') {
+      var dataAtual = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), Number(celula.textContent)) .toLocaleFormat('%Y-%m-%d');
+      if (FERIADOS.indexOf(dataAtual) === - 1) {
+        FERIADOS.push(dataAtual);
+        FERIADOS.sort();
+      }
+    }
+  });
+}
 function ehFeriado(registro) {
   if (registro.timestamp.getDay() == 0 || registro.timestamp.getDay() == 6) {
     return true;
   }
-  var [ano,
-  mes,
-  dia] = registro.data.split('-'),
-  data = [
-    dia,
-    mes
-  ].join('/');
-  if (FERIADOS['*'].indexOf(data) > - 1) {
-    return true;
-  } else if (FERIADOS[ano].indexOf(data) > - 1) {
+  if (FERIADOS.indexOf(registro.data) > - 1) {
     return true;
   }
   return false;
 }
-
-let oldXHR = window.XMLHttpRequest;
-window.XMLHttpRequest = function() {
+var oldXHR = window.XMLHttpRequest;
+window.XMLHttpRequest = function () {
   var xhr = new oldXHR();
-  xhr.send = function() {
+  xhr.send = function () {
     var oldfn = xhr.onreadystatechange;
-    xhr.onreadystatechange = function() {
+    xhr.onreadystatechange = function () {
       oldfn.apply(xhr, arguments);
       if (xhr.readyState === 4) {
         var parts = xhr.responseText.split('|');
         if (parts[2] === 'ctl00_ContentPlaceHolder1_UpdatePanel1') {
-          analisar();
+          //          analisarFeriados();
+          analisarRegistros();
         }
       }
     };
