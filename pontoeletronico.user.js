@@ -4,7 +4,7 @@
 // @description Relatório de ponto eletrônico
 // @require     https://code.jquery.com/jquery-2.1.1.min.js
 // @include     http://apl.jfpr.gov.br/pe/App_View/relatorio_1.aspx
-// @version     7
+// @version     8
 // @grant       none
 // ==/UserScript==
 
@@ -70,7 +70,8 @@ function analisarRegistros() {
   tabela.find('tbody tr:has(th):not(:has(#tituloColunaSaldo))').each((indice, elemento) => $(elemento).append('<th id="tituloColunaSaldo">Saldo</th>'));
   var linhas = Array.prototype.slice.call(tabela.find('tbody tr:has(td)'));
   var linhasPorData = obterDatasAPartirDeLinhas(linhas);
-  for (var dataAtual = dataInicio; (dataAtual.getTime()) <= (dataFim.getTime()); dataAtual = proximoDia(dataAtual)) {
+  for (var dataAtualMs = dataInicio.getTime(), dataFimMs = dataFim.getTime() + 86400000, dataAtual; dataAtualMs < dataFimMs; dataAtualMs += 86400000) {
+    dataAtual = new Date(dataAtualMs);
     var textoDataAtual = formatarData(dataAtual);
     var feriado = ehFeriado(dataAtual, textoDataAtual);
     if (feriado) {
@@ -85,7 +86,7 @@ function analisarRegistros() {
       var linhasDataAtual = linhasPorData[textoDataAtual];
       for (var linha of linhasDataAtual) {
         if (faltas.length) {
-          faltas.inserirAntesDe(linha);
+          faltas.inserirAntesDe(linhas[linha]);
         }
         var registroAtual = Registro.fromLinha(linhas[linha]);
         if (registroAnterior.tipo == 'S') {
@@ -202,11 +203,6 @@ function definirDiasTrabalhados(diasUteis, diasUteisTrabalhados, diasNaoUteis, d
   $('#ctl00_ContentPlaceHolder1_lblFaltasR').html('<span class="' + estilo + '">' + faltas + '</span>');
 }
 
-function proximoDia(data) {
-  var proximo = new Date(data.getFullYear(), data.getMonth(), data.getDate() + 1, 0, 0, 0, 0);
-  return proximo;
-}
-
 function Faltas() {
 }
 Faltas.prototype = Object.create(Array.prototype);
@@ -215,7 +211,8 @@ Faltas.prototype.enfileirar = function(data) {
   this.push(data.toLocaleFormat('%d/%m/%Y'));
 }
 Faltas.prototype.gerarHTML = function(texto) {
-  return '<tr class="ultima" style="font-family: Arial; font-size: 8pt;"><td colspan="2">' + texto + '</td><td class="erro">Falta</td><td colspan="4"></td></tr>';
+  var celulaVazia = '<td><br/></td>';
+  return '<tr class="ultima" style="font-family: Arial; font-size: 8pt;"><td>' + texto + '</td>' + celulaVazia + '<td class="erro">Falta</td>' + celulaVazia.repeat(4) + '</tr>';
 };
 Faltas.prototype.inserirAntesDe = function(linha) {
   var ultimaLinha = linha;
