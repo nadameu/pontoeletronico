@@ -4,225 +4,27 @@
 // @description Relatório de ponto eletrônico
 // @require     https://code.jquery.com/jquery-2.1.1.min.js
 // @include     http://apl.jfpr.gov.br/pe/App_View/relatorio_1.aspx
-// @version     7
+// @version     8
 // @grant       none
 // ==/UserScript==
+
+'use strict';
+
 var MINUTOS_DE_TOLERANCIA = 15;
-var FERIADOS = [
-];
-function analisarRegistros() {
-  var jornada = obterJornada();
-  var faltas = obterFaltas();
-  var diasUteis = obterDiasUteis();
-  var diasUteisTrabalhados = obterDiasUteisTrabalhados();
-  var diasNaoUteis = obterDiasNaoUteis();
-  var diasNaoUteisTrabalhados = 0;
-  var diasTrabalhados = 0;
-  var registroAnterior = {
-    timestamp: null,
-    data: null,
-    tipo: 'S',
-    celula: null
-  },
-  ultimaEntrada,
-  somaParcial = 0,
-  somaTotal = 0 - (diasUteis * jornada);
-  $('#ctl00_ContentPlaceHolder1_GridView1 tbody tr') .has('th') .each(function (indice, elemento) {
-    if ($(elemento) .has('#tituloColunaSaldo') .size() > 0) {
-      return ;
-    }
-    $(elemento) .append('<th id="tituloColunaSaldo">Saldo</th>');
-  }
-  );
-  var linhas = $('#ctl00_ContentPlaceHolder1_GridView1 tbody tr') .has('td');
-  var numLinha = 0;
-  var linha = linhas.get(numLinha);
-  var registro = linhaParaRegistro(linha);
-  do {
-    if (registroAnterior.tipo == 'S') {
-      if (registro.tipo == 'S') {
-        linha.cells[2].style.background = 'red';
-        linha.cells[2].style.color = 'white';
-        registro.tipo = 'E';
-      }
-      ultimaEntrada = registro.timestamp.valueOf();
-    } else if (registroAnterior.tipo == 'E') {
-      if (registro.tipo == 'E') {
-        linha.cells[2].style.background = 'red';
-        linha.cells[2].style.color = 'white';
-        registro.tipo = 'S';
-      }
-      somaParcial += registro.timestamp.valueOf() - ultimaEntrada;
-    }
-    var ultimaLinhaDoDia = false;
-    try {
-      var proximaLinha = linhas.get(++numLinha);
-      var proximoRegistro = linhaParaRegistro(proximaLinha);
-      ultimaLinhaDoDia = registro.data != proximoRegistro.data;
-    } catch (e) {
-      // Nao ha mais linhas
-      ultimaLinhaDoDia = true;
-    }
-    if (ultimaLinhaDoDia) {
-      linha.style.borderBottom = '2px solid black';
-      var minutos = milissegundosParaMinutos(somaParcial);
-      var saldo;
-      if (ehFeriado(registro)) {
-        saldo = minutos;
-      } else {
-        saldo = minutos - milissegundosParaMinutos(jornada.valueOf());
-        somaTotal += jornada.valueOf();
-        somaParcial -= jornada.valueOf();
-      }
-      registro.celula.textContent = formatarMinutos(saldo);
-      registro.celula.style.color = (saldo < 0) ? 'red' : 'green';
-      if (Math.abs(saldo) >= MINUTOS_DE_TOLERANCIA) {
-        registro.celula.style.textDecoration = 'none';
-        registro.celula.style.fontWeight = 'bold';
-        somaTotal += somaParcial;
-      } else {
-        registro.celula.style.textDecoration = 'line-through';
-        registro.celula.style.fontWeight = 'normal';
-      }
-      if (registro.tipo == 'E') {
-        registro.celula.style.background = 'red';
-        registro.celula.style.color = 'white';
-        registro.tipo = 'S';
-      }
-      somaParcial = 0;
-      diasTrabalhados++;
-    }
-    registroAnterior = registro;
-    registro = proximoRegistro;
-    linha = proximaLinha;
-  } while (numLinha < linhas.size());
-  var saldo = $('#ctl00_ContentPlaceHolder1_lblSalR');
-  saldo.html(formatarMinutos(milissegundosParaMinutos(somaTotal))) .css('color', (somaTotal < 0) ? 'red' : 'green');
-  saldo.parent() .html(saldo);
-  saldo.after('<br/><span style="font-size: 0.8em;"> (ignorando diferenças inferiores a ' + MINUTOS_DE_TOLERANCIA + ' minutos de tolerância).</span>');
-  definirDiasNaoUteisTrabalhados(diasTrabalhados - diasUteisTrabalhados);
-}
-function obterJornada() {
-  var texto = $('#ctl00_ContentPlaceHolder1_lblJornR') .get(0) .textContent;
-  var valor = textoParaData('01/01/2001 ' + texto) - textoParaData('01/01/2001 00:00:00');
-  return valor;
-}
-function obterFaltas() {
-  var elemento = $('#ctl00_ContentPlaceHolder1_lblFaltasR');
-  var texto = elemento.get(0) .textContent;
-  var valor = Number(texto);
-  if (valor > 0) elemento.css({
-    'color': 'red',
-    'font-weight': 'bold'
-  });
-  return valor;
-}
-function obterDiasUteis() {
-  var texto = $('#ctl00_ContentPlaceHolder1_lblDiaUR') .get(0) .textContent;
-  var valor = Number(texto);
-  return valor;
-}
-function obterDiasUteisTrabalhados() {
-  var texto = $('#ctl00_ContentPlaceHolder1_lblDUTR') .get(0) .textContent;
-  var valor = analisarValorTrabalhados(texto);
-  return valor;
-}
-function obterDiasNaoUteis() {
-  var texto = $('#ctl00_ContentPlaceHolder1_lblSDFPR') .get(0) .textContent;
-  var valor = Number(texto);
-  return valor;
-}
-function definirDiasNaoUteisTrabalhados(valor) {
-  var estilo = '';
-  if (valor > 0) {
-    estilo = 'color: green; font-weight: bold;';
-  }
-  $('#ctl00_ContentPlaceHolder1_lblSDFR') .html('(<span style="' + estilo + '">' + valor + '</span> trabalhados)');
-}
-function analisarValorTrabalhados(texto) {
-  var re = /^\((\d+) trabalhados\)$/;
-  var resultado = re.exec(texto);
-  if (resultado.length == 2) {
-    return Number(resultado[1]);
-  } else {
-    throw new Error('Texto "' + texto + '" não formatado conforme esperado.');
-  }
-}
-function linhaParaRegistro(linha) {
-  var timestamp = textoParaData(linha.cells[0].textContent);
-  var registro = {
-    data: timestamp.toLocaleFormat('%Y-%m-%d'),
-    timestamp: timestamp,
-    tipo: (linha.cells[2].textContent == 'Entrada') ? 'E' : 'S'
-  };
-  registro.celula = $('.resultado', linha);
-  if (registro.celula.size() == 1) {
-    registro.celula = registro.celula.get(0);
-  } else {
-    registro.celula = $('<td class="resultado"></td>') .get(0);
-    $(linha) .append(registro.celula);
-  }
-  return registro;
-}
-function textoParaData(texto) {
-  var [d,
-  m,
-  y,
-  h,
-  i,
-  s] = texto.split(/[ :\/]/g);
-  var data = new Date(y, m - 1, d, h, i, s, 0);
-  return data;
-}
-function milissegundosParaMinutos(ms) {
-  return Math.round(ms / 1000 / 60);
-}
-function formatarMinutos(minutos) {
-  var minutosAbsoluto = Math.abs(minutos);
-  var sinal = minutos / minutosAbsoluto;
-  var h = Math.floor(minutosAbsoluto / 60);
-  var m = Math.floor(minutosAbsoluto % 60);
-  while (m.toString() .length < 2) {
-    m = '0' + m;
-  }
-  return (sinal < 0 ? '-' : '') + [h,
-  m].join(':');
-}
-function analisarFeriados() {
-  analisarCalendario('ctl00_ContentPlaceHolder1_Calendar1');
-  analisarCalendario('ctl00_ContentPlaceHolder1_Calendar2');
-}
-function analisarCalendario(id) {
-  var tabela = $('#' + id);
-  var nomeMes;
-  tabela.find('td[style*="width:70%"]') .each(function (indiceCelula, celula) {
-    nomeMes = celula.textContent;
-  });
-  var mesAtual;
-  tabela.find('a[title="Go to the previous month"]') .each(function (indiceLink, link) {
-    var diasMesAnteriorDesdeDoisMil = Number(link.href.match(/,'V(\d+)'\)/) [1]);
-    var mesAnterior = new Date(2000, 0, 1 + diasMesAnteriorDesdeDoisMil, 0, 0, 0, 0);
-    mesAtual = new Date(mesAnterior.getFullYear(), mesAnterior.getMonth() + 1, 1);
-  });
-  tabela.find('td[style*="width:14%"]') .has('a[title$=" de ' + nomeMes + '"]') .each(function (indiceCelula, celula) {
-    if (celula.style.color === 'Red') {
-      var dataAtual = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), Number(celula.textContent)) .toLocaleFormat('%Y-%m-%d');
-      if (FERIADOS.indexOf(dataAtual) === - 1) {
-        FERIADOS.push(dataAtual);
-        FERIADOS.sort();
-      }
-    }
-  });
-}
-function ehFeriado(registro) {
-  if (registro.timestamp.getDay() == 0 || registro.timestamp.getDay() == 6) {
-    return true;
-  }
-  if (FERIADOS.indexOf(registro.data) > - 1) {
-    return true;
-  }
-  return false;
-}
+var FERIADOS = new Set();
+
+$(function() {
+  $('head').append('<style>' + [
+    'tr.ultima { border-bottom: 2px solid black; }',
+    'span.naoUteisTrabalhados { font-weight: bold; color: #262; }',
+    'span.faltas { font-weight: bold; color: #c33; }',
+    'td.resultado { font-weight: bold; color: #262; border-color: #696969; }',
+    'td.saldoNegativo { color: #c33; }',
+    'td.saldoIgnorado { text-decoration: line-through; font-weight: normal; }',
+    'td.erro { background-color: #c33; color: white; border-color: #696969; }'
+  ].join('\n') + '</style>');
+});
+
 var oldXHR = window.XMLHttpRequest;
 window.XMLHttpRequest = function () {
   var xhr = new oldXHR();
@@ -231,14 +33,287 @@ window.XMLHttpRequest = function () {
     xhr.onreadystatechange = function () {
       oldfn.apply(xhr, arguments);
       if (xhr.readyState === 4) {
-        var parts = xhr.responseText.split('|');
-        if (parts[2] === 'ctl00_ContentPlaceHolder1_UpdatePanel1') {
-          //          analisarFeriados();
-          analisarRegistros();
+        try {
+          obterJornada();
+        } catch (ex) {
+          // Não está na tela que desejamos
+          return;
         }
+        analisarFeriados();
+        analisarRegistros();
       }
     };
     return oldXHR.prototype.send.apply(xhr, arguments);
   }
   return xhr;
 };
+
+function analisarRegistros() {
+  var jornada = obterJornada();
+  var dataInicio = obterDataInicio();
+  var dataFim = obterDataFim();
+  var diasUteis = 0;
+  var diasUteisTrabalhados = 0;
+  var diasNaoUteis = 0;
+  var diasNaoUteisTrabalhados = 0;
+  var somaParcial = 0;
+  var somaTotal = 0;
+  var faltas = new Faltas();
+  var ultimoRegistro = null;
+  var tabela = $('#ctl00_ContentPlaceHolder1_GridView1');
+  if (tabela.size() === 1) {
+    var elementoTabela = tabela.get(0);
+    var proximoIrmaoTabela = elementoTabela.nextSibling;
+    var paiTabela = elementoTabela.parentNode;
+    paiTabela.removeChild(elementoTabela);
+  }
+  tabela.find('tbody tr:has(th):not(:has(#tituloColunaSaldo))').each((indice, elemento) => $(elemento).append('<th id="tituloColunaSaldo">Saldo</th>'));
+  var linhas = Array.prototype.slice.call(tabela.find('tbody tr:has(td)'));
+  var linhasPorData = obterDatasAPartirDeLinhas(linhas);
+  for (var dataAtualMs = dataInicio.getTime(), dataFimMs = dataFim.getTime() + 86400000, dataAtual; dataAtualMs < dataFimMs; dataAtualMs += 86400000) {
+    dataAtual = new Date(dataAtualMs);
+    var textoDataAtual = formatarData(dataAtual);
+    var feriado = ehFeriado(dataAtual, textoDataAtual);
+    if (feriado) {
+      ++diasNaoUteis;
+      somaParcial = 0;
+    } else {
+      ++diasUteis;
+      somaParcial = 0 - jornada.valueOf();
+    }
+    if (textoDataAtual in linhasPorData) {
+      var registroAnterior = new Registro();
+      var linhasDataAtual = linhasPorData[textoDataAtual];
+      for (var linha of linhasDataAtual) {
+        if (faltas.length) {
+          faltas.inserirAntesDe(linhas[linha]);
+        }
+        var registroAtual = Registro.fromLinha(linhas[linha]);
+        if (registroAnterior.tipo == 'S') {
+          if (registroAtual.tipo == 'S') {
+            registroAtual.destacarErroTipo();
+            registroAtual.tipo = 'E';
+          }
+        } else if (registroAnterior.tipo == 'E') {
+          if (registroAtual.tipo == 'E') {
+            registroAtual.destacarErroTipo();
+            registroAtual.tipo = 'S';
+          }
+          somaParcial += registroAtual.timestamp.valueOf() - registroAnterior.timestamp.valueOf();
+        }
+        ultimoRegistro = registroAnterior = registroAtual;
+      }
+      ultimoRegistro.formatarUltimoRegistro(somaParcial);
+      if (feriado) {
+        diasNaoUteisTrabalhados++;
+      } else {
+        diasUteisTrabalhados++;
+      }
+    } else {
+      if (! feriado) {
+        faltas.enfileirar(dataAtual);
+      }
+    }
+    var minutosParcial = milissegundosParaMinutos(somaParcial);
+    if (Math.abs(minutosParcial) >= MINUTOS_DE_TOLERANCIA) {
+      somaTotal += somaParcial;
+    }
+    somaParcial = 0;
+  }
+  if (faltas.length && ultimoRegistro) {
+    faltas.inserirApos(ultimoRegistro.linha);
+  }
+  var saldo = $('#ctl00_ContentPlaceHolder1_lblSalR');
+  saldo.html(formatarMinutos(milissegundosParaMinutos(somaTotal))).css('color', (somaTotal < 0) ? '#c33' : '#262');
+  saldo.after('<br/><span style="font-size: 0.8em;"> (ignorando diferenças inferiores a ' + MINUTOS_DE_TOLERANCIA + ' minutos de tolerância).</span>');
+  definirDiasTrabalhados(diasUteis, diasUteisTrabalhados, diasNaoUteis, diasNaoUteisTrabalhados);
+  if (tabela.size() === 1) {
+  paiTabela.insertBefore(elementoTabela, proximoIrmaoTabela);
+  }
+}
+
+function obterJornada() {
+  var texto = $('#ctl00_ContentPlaceHolder1_lblJornR').get(0).textContent;
+  var valor = textoParaDataHora('01/01/2001 ' + texto) - textoParaDataHora('01/01/2001 00:00:00');
+  return valor;
+}
+
+function obterDataInicio() {
+  var texto = $('#ctl00_ContentPlaceHolder1_lblInicio').get(0).textContent;
+  var textoData = /^Início: (\d{2}\/\d{2}\/\d{4})$/.exec(texto)[1];
+  var valor = textoParaData(textoData);
+  return valor;
+}
+
+function obterDataFim() {
+  var texto = $('#ctl00_ContentPlaceHolder1_lblFim').get(0).textContent;
+  var textoData = /^Fim: (\d{2}\/\d{2}\/\d{4})$/.exec(texto)[1];
+  var valor = textoParaData(textoData);
+  return valor;
+}
+
+function obterDatasAPartirDeLinhas(linhas) {
+  var datas = {};
+  for (var i = 0, l = linhas.length; i < l; ++i) {
+    var linha = linhas[i];
+    var texto = linha.cells[0].textContent;
+    var data = formatarData(textoParaDataHora(texto));
+    if (! (data in datas)) {
+      datas[data] = new Set();
+    }
+    datas[data].add(i);
+  }
+  return datas;
+}
+
+function formatarData(timestamp) {
+  return timestamp.toLocaleFormat('%Y-%m-%d');
+}
+
+function textoParaDataHora(texto) {
+  var [d, m, y, h, i, s] = texto.split(/[ :\/]/g);
+  var data = new Date(y, m - 1, d, h, i, s, 0);
+  return data;
+}
+
+function ehFeriado(data, texto) {
+  if (FERIADOS.has(texto)) {
+    return true;
+  }
+  if (data.getDay() == 0 || data.getDay() == 6) {
+    return true;
+  }
+  return false;
+}
+
+function definirDiasTrabalhados(diasUteis, diasUteisTrabalhados, diasNaoUteis, diasNaoUteisTrabalhados) {
+  $('#ctl00_ContentPlaceHolder1_lblDiaUR').html(diasUteis);
+  $('#ctl00_ContentPlaceHolder1_lblDUTR').html('(' + diasUteisTrabalhados + ' trabalhados)');
+  $('#ctl00_ContentPlaceHolder1_lblSDFPR').html(diasNaoUteis);
+  var estilo = '';
+  if (diasNaoUteisTrabalhados > 0) {
+    estilo = 'naoUteisTrabalhados';
+  }
+  $('#ctl00_ContentPlaceHolder1_lblSDFR').html('(<span class="' + estilo + '">' + diasNaoUteisTrabalhados + '</span> trabalhados)');
+  var faltas = diasUteis - diasUteisTrabalhados;
+  var estilo = '';
+  if (faltas > 0) {
+    estilo = 'faltas';
+  }
+  $('#ctl00_ContentPlaceHolder1_lblFaltasR').html('<span class="' + estilo + '">' + faltas + '</span>');
+}
+
+function Faltas() {
+}
+Faltas.prototype = Object.create(Array.prototype);
+Faltas.prototype.constructor = Faltas;
+Faltas.prototype.enfileirar = function(data) {
+  this.push(data.toLocaleFormat('%d/%m/%Y'));
+}
+Faltas.prototype.gerarHTML = function(texto) {
+  var celulaVazia = '<td><br/></td>';
+  return '<tr class="ultima" style="font-family: Arial; font-size: 8pt;"><td>' + texto + '</td>' + celulaVazia + '<td class="erro">Falta</td>' + celulaVazia.repeat(4) + '</tr>';
+};
+Faltas.prototype.inserirAntesDe = function(linha) {
+  var ultimaLinha = linha;
+  for (var texto of this) {
+    var linhaNova = $(this.gerarHTML(texto));
+    $(ultimaLinha).before(linhaNova);
+    ultimaLinha = linhaNova;
+  }
+  this.splice(0, this.length);
+};
+Faltas.prototype.inserirApos = function(linha) {
+  var ultimaLinha = linha;
+  for (var texto of this) {
+    var linhaNova = $(this.gerarHTML(texto));
+    $(ultimaLinha).after(linhaNova);
+    ultimaLinha = linhaNova;
+  }
+  this.splice(0, this.length);
+};
+
+function Registro() {
+}
+Registro.prototype = {
+  celula: null,
+  celulaTipo: null,
+  data: '',
+  linha: null,
+  timestamp: 0,
+  tipo: 'S',
+  destacarErroTipo: function() {
+     this.linha.cells[2].classList.add('erro');
+  },
+  formatarUltimoRegistro: function(somaParcial) {
+    this.linha.className = 'ultima';
+    var celula;
+    celula = this.linha.insertCell();
+    var minutos = milissegundosParaMinutos(somaParcial);
+    celula.textContent = formatarMinutos(minutos);
+    var classes = ['resultado'];
+    if (minutos < 0) {
+      classes.push('saldoNegativo');
+    }
+    if (Math.abs(minutos) < MINUTOS_DE_TOLERANCIA) {
+      classes.push('saldoIgnorado')
+    }
+    if (this.tipo == 'E') {
+      classes.push('erro');
+    }
+    celula.className = classes.join(' ');
+  }
+};
+Registro.prototype.constructor = Registro;
+Registro.fromLinha = function(linha) {
+  var timestamp = textoParaDataHora(linha.cells[0].textContent);
+  var registro = new Registro();
+  registro.linha = linha;
+  registro.timestamp = timestamp;
+  registro.tipo = (linha.cells[2].textContent === 'Entrada') ? 'E' : 'S';
+  return registro;
+};
+
+function textoParaData(texto) {
+  var [d, m, y] = texto.split(/[\/]/g);
+  var data = new Date(y, m - 1, d, 0, 0, 0, 0);
+  return data;
+}
+
+function milissegundosParaMinutos(ms) {
+  return Math.round(ms / 1000 / 60);
+}
+
+function formatarMinutos(minutos) {
+  var minutosAbsoluto = Math.abs(minutos);
+  var sinal = Math.sign(minutos);
+  var h = (minutosAbsoluto / 60) | 0;
+  var m = minutosAbsoluto % 60;
+  m = '0'.repeat(2 - m.toString().length) + m;
+  return (sinal < 0 ? '-' : '') + h + ':' + m;
+}
+
+function analisarFeriados() {
+  analisarCalendario('ctl00_ContentPlaceHolder1_Calendar1');
+  analisarCalendario('ctl00_ContentPlaceHolder1_Calendar2');
+}
+
+function analisarCalendario(id) {
+  var tabela = $('#' + id);
+  var nomeMes;
+  tabela.find('td[style*="width:70%"]').each(function (indiceCelula, celula) {
+    nomeMes = celula.textContent;
+  });
+  var mesAtual;
+  tabela.find('a[title="Go to the previous month"]').each(function (indiceLink, link) {
+    var diasMesAnteriorDesdeDoisMil = Number(link.href.match(/,'V(\d+)'\)/) [1]);
+    var mesAnterior = new Date(2000, 0, 1 + diasMesAnteriorDesdeDoisMil, 0, 0, 0, 0);
+    mesAtual = new Date(mesAnterior.getFullYear(), mesAnterior.getMonth() + 1, 1);
+  });
+  tabela.find('td[style*="width:14%"]').has('a[title$=" de ' + nomeMes + '"]').each(function (indiceCelula, celula) {
+    if (celula.style.color === 'Red') {
+      var dataAtual = formatarData(new Date(mesAtual.getFullYear(), mesAtual.getMonth(), Number(celula.textContent)));
+      FERIADOS.add(dataAtual);
+    }
+  });
+}
