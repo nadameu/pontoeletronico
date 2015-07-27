@@ -4,7 +4,7 @@
 // @description Relatório de ponto eletrônico
 // @require     https://code.jquery.com/jquery-2.1.1.min.js
 // @include     http://apl.jfpr.gov.br/pe/App_View/relatorio_1.aspx
-// @version     8
+// @version     9
 // @grant       none
 // ==/UserScript==
 
@@ -215,10 +215,10 @@ Faltas.prototype.gerarHTML = function(texto) {
   return '<tr class="ultima" style="font-family: Arial; font-size: 8pt;"><td>' + texto + '</td>' + celulaVazia + '<td class="erro">Falta</td>' + celulaVazia.repeat(4) + '</tr>';
 };
 Faltas.prototype.inserirAntesDe = function(linha) {
-  var ultimaLinha = linha;
+  var ultimaLinha = linha.previousSibling;
   for (var texto of this) {
     var linhaNova = $(this.gerarHTML(texto));
-    $(ultimaLinha).before(linhaNova);
+    $(ultimaLinha).after(linhaNova);
     ultimaLinha = linhaNova;
   }
   this.splice(0, this.length);
