@@ -4,7 +4,7 @@
 // @description Relatório de ponto eletrônico
 // @require     https://code.jquery.com/jquery-2.1.1.min.js
 // @include     http://apl.jfpr.gov.br/pe/App_View/relatorio_1.aspx
-// @version     9
+// @version     10
 // @grant       none
 // ==/UserScript==
 
@@ -21,6 +21,7 @@ $(function() {
     'td.resultado { font-weight: bold; color: #262; border-color: #696969; }',
     'td.saldoNegativo { color: #c33; }',
     'td.saldoIgnorado { text-decoration: line-through; font-weight: normal; }',
+    'td.alterado { color: #c63; border-color: #696969; }',
     'td.erro { background-color: #c33; color: white; border-color: #696969; }'
   ].join('\n') + '</style>');
 });
@@ -100,6 +101,9 @@ function analisarRegistros() {
             registroAtual.tipo = 'S';
           }
           somaParcial += registroAtual.timestamp.valueOf() - registroAnterior.timestamp.valueOf();
+        }
+        if (registroAtual.timestamp - registroAtual.registroEfetivo !== 0) {
+          registroAtual.destacarRegistroAlterado();
         }
         ultimoRegistro = registroAnterior = registroAtual;
       }
@@ -240,10 +244,14 @@ Registro.prototype = {
   celulaTipo: null,
   data: '',
   linha: null,
+  registroEfetivo: 0,
   timestamp: 0,
   tipo: 'S',
   destacarErroTipo: function() {
      this.linha.cells[2].classList.add('erro');
+  },
+  destacarRegistroAlterado: function() {
+     this.linha.cells[1].classList.add('alterado');
   },
   formatarUltimoRegistro: function(somaParcial) {
     this.linha.className = 'ultima';
@@ -267,9 +275,11 @@ Registro.prototype = {
 Registro.prototype.constructor = Registro;
 Registro.fromLinha = function(linha) {
   var timestamp = textoParaDataHora(linha.cells[0].textContent);
+  var registroEfetivo = textoParaDataHora(linha.cells[1].textContent);
   var registro = new Registro();
   registro.linha = linha;
   registro.timestamp = timestamp;
+  registro.registroEfetivo = registroEfetivo;
   registro.tipo = (linha.cells[2].textContent === 'Entrada') ? 'E' : 'S';
   return registro;
 };
