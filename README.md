@@ -23,3 +23,5 @@ No sistema de ponto eletrônico da JFPR, na tela de relatório, selecionar as da
 O script calcula automaticamente o saldo de horas, dia a dia, e descarta diferenças inferiores a 15 minutos de tolerância para o cálculo do saldo total do período.
 
 Eventuais erros de preenchimento &mdash; duas entradas ou duas saídas seguidas, dias com apenas um registro ou três (entrada-saída-entrada) &mdash; serão destacados com um fundo vermelho.
+
+O script também destaca as ocasiões em que houve alteração de horário após o registro inicial.
