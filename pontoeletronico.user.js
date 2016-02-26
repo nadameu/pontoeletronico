@@ -61,6 +61,7 @@ function analisarRegistros() {
   var somaTotal = 0;
   var faltas = new Faltas();
   var ultimoRegistro = null;
+  var primeiraCompensacao = null;
   var tabela = $('#ctl00_ContentPlaceHolder1_GridView1');
   if (tabela.size() === 1) {
     var elementoTabela = tabela.get(0);
@@ -71,7 +72,7 @@ function analisarRegistros() {
   tabela.find('tbody tr:has(th):not(:has(#tituloColunaSaldo))').each((indice, elemento) => $(elemento).append('<th id="tituloColunaSaldo">Saldo</th>'));
   var linhas = Array.prototype.slice.call(tabela.find('tbody tr:has(td)'));
   var linhasPorData = obterDatasAPartirDeLinhas(linhas);
-  for (var dataAtualMs = dataInicio.getTime(), dataFimMs = dataFim.getTime() + 86400000, dataAtual; dataAtualMs < dataFimMs; dataAtualMs += 86400000) {
+  for (var dataAtualMs = dataInicio.getTime(), dataFimMs = dataFim.getTime(), dataAtual; dataAtualMs <= dataFimMs; dataAtualMs = proximoDia(dataAtualMs)) {
     dataAtual = new Date(dataAtualMs);
     var textoDataAtual = formatarData(dataAtual);
     var feriado = ehFeriado(dataAtual, textoDataAtual);
@@ -113,6 +114,9 @@ function analisarRegistros() {
       } else {
         diasUteisTrabalhados++;
       }
+      if (registroAtual.justificativa === 'Compensação por serviço extraordinário' && primeiraCompensacao === null) {
+        primeiraCompensacao = dataAtual;
+      }
     } else {
       if (! feriado) {
         faltas.enfileirar(dataAtual);
@@ -132,8 +136,12 @@ function analisarRegistros() {
   saldo.after('<br/><span style="font-size: 0.8em;"> (ignorando diferenças inferiores a ' + MINUTOS_DE_TOLERANCIA + ' minutos de tolerância).</span>');
   definirDiasTrabalhados(diasUteis, diasUteisTrabalhados, diasNaoUteis, diasNaoUteisTrabalhados);
   if (tabela.size() === 1) {
-  paiTabela.insertBefore(elementoTabela, proximoIrmaoTabela);
+    paiTabela.insertBefore(elementoTabela, proximoIrmaoTabela);
   }
+  console.log(dataInicio, dataFim, diasUteis + diasNaoUteis);
+  var dataAConsiderar = new Date((primeiraCompensacao || dataFim).getTime());
+  dataAConsiderar.setDate(dataAConsiderar.getDate() - 89);
+  console.log('90 dias: ', dataAConsiderar.toLocaleFormat('%d/%m/%Y'));
 }
 
 function obterJornada() {
@@ -178,6 +186,12 @@ function textoParaDataHora(texto) {
   var [d, m, y, h, i, s] = texto.split(/[ :\/]/g);
   var data = new Date(y, m - 1, d, h, i, s, 0);
   return data;
+}
+
+function proximoDia(ms) {
+  var data = new Date(ms);
+  data.setDate(data.getDate() + 1);
+  return data.getTime();
 }
 
 function ehFeriado(data, texto) {
@@ -247,6 +261,7 @@ Registro.prototype = {
   registroEfetivo: 0,
   timestamp: 0,
   tipo: 'S',
+  justificativa: null,
   destacarErroTipo: function() {
      this.linha.cells[2].classList.add('erro');
   },
@@ -276,11 +291,15 @@ Registro.prototype.constructor = Registro;
 Registro.fromLinha = function(linha) {
   var timestamp = textoParaDataHora(linha.cells[0].textContent);
   var registroEfetivo = textoParaDataHora(linha.cells[1].textContent);
+  var justificativa = linha.cells[3].textContent.trim();
+  if (justificativa === '') justificativa = linha.cells[4].textContent.trim();
+  if (justificativa === '') justificativa = null;
   var registro = new Registro();
   registro.linha = linha;
   registro.timestamp = timestamp;
   registro.registroEfetivo = registroEfetivo;
   registro.tipo = (linha.cells[2].textContent === 'Entrada') ? 'E' : 'S';
+  registro.justificativa = justificativa;
   return registro;
 };
 
