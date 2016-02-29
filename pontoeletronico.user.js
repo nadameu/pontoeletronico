@@ -35,19 +35,32 @@ window.XMLHttpRequest = function () {
       oldfn.apply(xhr, arguments);
       if (xhr.readyState === 4) {
         try {
-          obterJornada();
+          analisarFeriados();
+          analisarRegistros();
         } catch (ex) {
           // Não está na tela que desejamos
           return;
         }
-        analisarFeriados();
-        analisarRegistros();
       }
     };
     return oldXHR.prototype.send.apply(xhr, arguments);
   }
   return xhr;
 };
+
+function analisarFeriados() {
+  analisarCalendario(1);
+  analisarCalendario(2);
+}
+
+function analisarCalendario(id) {
+  var tabela = $('#ctl00_ContentPlaceHolder1_Calendar' + id);
+  tabela.find('td[style="color:Red;width:14%;"] a[href]').each(function (indiceLink, link) {
+    var diasDesdeDoisMil = Number(/','(\d+)'\)/.exec(link.href)[1]);
+    var data = DateHelper.toISODate(DateFactory.diasDesdeDoisMil(diasDesdeDoisMil));
+    FERIADOS.add(data);
+  });
+}
 
 function analisarRegistros() {
   var jornada = obterJornada();
@@ -72,16 +85,15 @@ function analisarRegistros() {
   tabela.find('tbody tr:has(th):not(:has(#tituloColunaSaldo))').each((indice, elemento) => $(elemento).append('<th id="tituloColunaSaldo">Saldo</th>'));
   var linhas = Array.prototype.slice.call(tabela.find('tbody tr:has(td)'));
   var linhasPorData = obterDatasAPartirDeLinhas(linhas);
-  for (var dataAtualMs = dataInicio.getTime(), dataFimMs = dataFim.getTime(), dataAtual; dataAtualMs <= dataFimMs; dataAtualMs = proximoDia(dataAtualMs)) {
-    dataAtual = new Date(dataAtualMs);
-    var textoDataAtual = formatarData(dataAtual);
+  for (var dataAtual = dataInicio, timestampFim = dataFim.getTime(); dataAtual.getTime() <= timestampFim; dataAtual = DateFactory.diaSeguinte(dataAtual)) {
+    var textoDataAtual = DateHelper.toISODate(dataAtual);
     var feriado = ehFeriado(dataAtual, textoDataAtual);
     if (feriado) {
       ++diasNaoUteis;
       somaParcial = 0;
     } else {
       ++diasUteis;
-      somaParcial = 0 - jornada.valueOf();
+      somaParcial = 0 - jornada.getTime();
     }
     if (textoDataAtual in linhasPorData) {
       var registroAnterior = new Registro();
@@ -101,7 +113,7 @@ function analisarRegistros() {
             registroAtual.destacarErroTipo();
             registroAtual.tipo = 'S';
           }
-          somaParcial += registroAtual.timestamp.valueOf() - registroAnterior.timestamp.valueOf();
+          somaParcial += registroAtual.timestamp.getTime() - registroAnterior.timestamp.getTime();
         }
         if (registroAtual.timestamp - registroAtual.registroEfetivo !== 0) {
           registroAtual.destacarRegistroAlterado();
@@ -110,9 +122,9 @@ function analisarRegistros() {
       }
       ultimoRegistro.formatarUltimoRegistro(somaParcial);
       if (feriado) {
-        diasNaoUteisTrabalhados++;
+        ++diasNaoUteisTrabalhados;
       } else {
-        diasUteisTrabalhados++;
+        ++diasUteisTrabalhados;
       }
       if (registroAtual.justificativa === 'Compensação por serviço extraordinário' && primeiraCompensacao === null) {
         primeiraCompensacao = dataAtual;
@@ -126,6 +138,9 @@ function analisarRegistros() {
     if (Math.abs(minutosParcial) >= MINUTOS_DE_TOLERANCIA) {
       somaTotal += somaParcial;
     }
+    if (! feriado && textoDataAtual in linhasPorData) {
+      ultimoRegistro.formatarUltimoRegistro(somaTotal);
+    }
     somaParcial = 0;
   }
   if (faltas.length && ultimoRegistro) {
@@ -138,30 +153,26 @@ function analisarRegistros() {
   if (tabela.size() === 1) {
     paiTabela.insertBefore(elementoTabela, proximoIrmaoTabela);
   }
-  console.log(dataInicio, dataFim, diasUteis + diasNaoUteis);
-  var dataAConsiderar = new Date((primeiraCompensacao || dataFim).getTime());
-  dataAConsiderar.setDate(dataAConsiderar.getDate() - 89);
-  console.log('90 dias: ', dataAConsiderar.toLocaleFormat('%d/%m/%Y'));
+  console.log(DateHelper.toLocaleDate(dataInicio), DateHelper.toLocaleDate(dataFim), diasUteis + diasNaoUteis);
+  var dataAConsiderar = DateFactory.deslocarDias(primeiraCompensacao || dataFim, -89);
+  console.log('90 dias: ', DateHelper.toLocaleDate(dataAConsiderar));
 }
 
 function obterJornada() {
   var texto = $('#ctl00_ContentPlaceHolder1_lblJornR').get(0).textContent;
-  var valor = textoParaDataHora('01/01/2001 ' + texto) - textoParaDataHora('01/01/2001 00:00:00');
-  return valor;
+  return DateFactory.hmsTexto(texto);
 }
 
 function obterDataInicio() {
   var texto = $('#ctl00_ContentPlaceHolder1_lblInicio').get(0).textContent;
   var textoData = /^Início: (\d{2}\/\d{2}\/\d{4})$/.exec(texto)[1];
-  var valor = textoParaData(textoData);
-  return valor;
+  return DateFactory.dataTexto(textoData);
 }
 
 function obterDataFim() {
   var texto = $('#ctl00_ContentPlaceHolder1_lblFim').get(0).textContent;
   var textoData = /^Fim: (\d{2}\/\d{2}\/\d{4})$/.exec(texto)[1];
-  var valor = textoParaData(textoData);
-  return valor;
+  return DateFactory.dataTexto(textoData);
 }
 
 function obterDatasAPartirDeLinhas(linhas) {
@@ -169,7 +180,7 @@ function obterDatasAPartirDeLinhas(linhas) {
   for (var i = 0, l = linhas.length; i < l; ++i) {
     var linha = linhas[i];
     var texto = linha.cells[0].textContent;
-    var data = formatarData(textoParaDataHora(texto));
+    var data = DateHelper.toISODate(DateFactory.dataHoraTexto(texto));
     if (! (data in datas)) {
       datas[data] = new Set();
     }
@@ -220,36 +231,6 @@ function definirDiasTrabalhados(diasUteis, diasUteisTrabalhados, diasNaoUteis, d
   }
   $('#ctl00_ContentPlaceHolder1_lblFaltasR').html('<span class="' + estilo + '">' + faltas + '</span>');
 }
-
-function Faltas() {
-}
-Faltas.prototype = Object.create(Array.prototype);
-Faltas.prototype.constructor = Faltas;
-Faltas.prototype.enfileirar = function(data) {
-  this.push(data.toLocaleFormat('%d/%m/%Y'));
-}
-Faltas.prototype.gerarHTML = function(texto) {
-  var celulaVazia = '<td><br/></td>';
-  return '<tr class="ultima" style="font-family: Arial; font-size: 8pt;"><td>' + texto + '</td>' + celulaVazia + '<td class="erro">Falta</td>' + celulaVazia.repeat(4) + '</tr>';
-};
-Faltas.prototype.inserirAntesDe = function(linha) {
-  var ultimaLinha = linha.previousSibling;
-  for (var texto of this) {
-    var linhaNova = $(this.gerarHTML(texto));
-    $(ultimaLinha).after(linhaNova);
-    ultimaLinha = linhaNova;
-  }
-  this.splice(0, this.length);
-};
-Faltas.prototype.inserirApos = function(linha) {
-  var ultimaLinha = linha;
-  for (var texto of this) {
-    var linhaNova = $(this.gerarHTML(texto));
-    $(ultimaLinha).after(linhaNova);
-    ultimaLinha = linhaNova;
-  }
-  this.splice(0, this.length);
-};
 
 function Registro() {
 }
@@ -322,27 +303,65 @@ function formatarMinutos(minutos) {
   return (sinal < 0 ? '-' : '') + h + ':' + m;
 }
 
-function analisarFeriados() {
-  analisarCalendario('ctl00_ContentPlaceHolder1_Calendar1');
-  analisarCalendario('ctl00_ContentPlaceHolder1_Calendar2');
+/*** FUNÇÕES AUXILIARES ***/
+
+var DateFactory = {
+  dataHoraTexto: function(texto) {
+    var [trash, d, m, y, h, i, s] = /(\d+)\/(\d+)\/(\d+) (\d+):(\d+):(\d+)/.exec(texto);
+    return new Date(y, m - 1, d, h, i, s, 0);
+  },
+  dataTexto: function(texto) {
+    var [trash, d, m, y] = /(\d+)\/(\d+)\/(\d+)/.exec(texto);
+    return DateFactory.dmy(d, m, y);
+  },
+  deslocarDias: function(data, dias) {
+    return DateFactory.dmy(data.getDate() + dias, data.getMonth() + 1, data.getFullYear());
+  },
+  diasDesdeDoisMil: function(diasDesdeDoisMil) {
+    return DateFactory.deslocarDias(DateFactory.dmy(1, 1, 2000), diasDesdeDoisMil);
+  },
+  diaSeguinte: function(data) {
+    return DateFactory.deslocarDias(data, 1);
+  },
+  dmy: function(d, m, y) {
+    var diaAnterior = new Date(y, m - 1, d - 1, 23, 59, 59, 999);
+    return new Date(diaAnterior.getTime() + 1);
+  },
+  hmsTexto: function(texto) {
+    return new Date(Date.parse('T' + texto + 'Z'));
+  }
 }
 
-function analisarCalendario(id) {
-  var tabela = $('#' + id);
-  var nomeMes;
-  tabela.find('td[style*="width:70%"]').each(function (indiceCelula, celula) {
-    nomeMes = celula.textContent;
-  });
-  var mesAtual;
-  tabela.find('a[title="Go to the previous month"]').each(function (indiceLink, link) {
-    var diasMesAnteriorDesdeDoisMil = Number(link.href.match(/,'V(\d+)'\)/) [1]);
-    var mesAnterior = new Date(2000, 0, 1 + diasMesAnteriorDesdeDoisMil, 0, 0, 0, 0);
-    mesAtual = new Date(mesAnterior.getFullYear(), mesAnterior.getMonth() + 1, 1);
-  });
-  tabela.find('td[style*="width:14%"]').has('a[title$=" de ' + nomeMes + '"]').each(function (indiceCelula, celula) {
-    if (celula.style.color === 'Red') {
-      var dataAtual = formatarData(new Date(mesAtual.getFullYear(), mesAtual.getMonth(), Number(celula.textContent)));
-      FERIADOS.add(dataAtual);
-    }
-  });
+var DateHelper = {
+  toISODate: function(data) {
+    return data.toLocaleFormat('%Y-%m-%d');
+  },
+  toLocaleDate: function(data) {
+    return data.toLocaleFormat('%d/%m/%Y');
+  }
 }
+
+function Faltas() {
+}
+Faltas.prototype = Object.create(Array.prototype);
+Faltas.prototype.constructor = Faltas;
+Faltas.prototype.enfileirar = function(data) {
+  this.push(data);
+}
+Faltas.prototype.gerarHTML = function(data) {
+  var celulaVazia = '<td><br/></td>';
+  return '<tr class="ultima" style="font-family: Arial; font-size: 8pt;"><td>' + DateHelper.toLocaleDate(data) + '</td>' + celulaVazia + '<td class="erro">Falta</td>' + celulaVazia.repeat(4) + '</tr>';
+};
+Faltas.prototype.inserirAntesDe = function(linha) {
+  return this.inserirApos(linha.previousSibling);
+};
+Faltas.prototype.inserirApos = function(linha) {
+  var ultimaLinha = linha;
+  for (var data of this) {
+    var linhaNova = $(this.gerarHTML(data));
+    $(ultimaLinha).after(linhaNova);
+    ultimaLinha = linhaNova;
+  }
+  this.splice(0, this.length);
+};
+
