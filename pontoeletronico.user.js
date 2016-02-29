@@ -39,6 +39,7 @@ window.XMLHttpRequest = function () {
           analisarRegistros();
         } catch (ex) {
           // Não está na tela que desejamos
+          throw ex;
           return;
         }
       }
@@ -134,7 +135,7 @@ function analisarRegistros() {
         faltas.enfileirar(dataAtual);
       }
     }
-    var minutosParcial = milissegundosParaMinutos(somaParcial);
+    var minutosParcial = IntervalHelper.toMinutes(somaParcial);
     if (Math.abs(minutosParcial) >= MINUTOS_DE_TOLERANCIA) {
       somaTotal += somaParcial;
     }
@@ -147,7 +148,7 @@ function analisarRegistros() {
     faltas.inserirApos(ultimoRegistro.linha);
   }
   var saldo = $('#ctl00_ContentPlaceHolder1_lblSalR');
-  saldo.html(formatarMinutos(milissegundosParaMinutos(somaTotal))).css('color', (somaTotal < 0) ? '#c33' : '#262');
+  saldo.html(IntervalHelper.toMinutesString(somaTotal)).css('color', (somaTotal < 0) ? '#c33' : '#262');
   saldo.after('<br/><span style="font-size: 0.8em;"> (ignorando diferenças inferiores a ' + MINUTOS_DE_TOLERANCIA + ' minutos de tolerância).</span>');
   definirDiasTrabalhados(diasUteis, diasUteisTrabalhados, diasNaoUteis, diasNaoUteisTrabalhados);
   if (tabela.size() === 1) {
@@ -189,22 +190,6 @@ function obterDatasAPartirDeLinhas(linhas) {
   return datas;
 }
 
-function formatarData(timestamp) {
-  return timestamp.toLocaleFormat('%Y-%m-%d');
-}
-
-function textoParaDataHora(texto) {
-  var [d, m, y, h, i, s] = texto.split(/[ :\/]/g);
-  var data = new Date(y, m - 1, d, h, i, s, 0);
-  return data;
-}
-
-function proximoDia(ms) {
-  var data = new Date(ms);
-  data.setDate(data.getDate() + 1);
-  return data.getTime();
-}
-
 function ehFeriado(data, texto) {
   if (FERIADOS.has(texto)) {
     return true;
@@ -230,77 +215,6 @@ function definirDiasTrabalhados(diasUteis, diasUteisTrabalhados, diasNaoUteis, d
     estilo = 'faltas';
   }
   $('#ctl00_ContentPlaceHolder1_lblFaltasR').html('<span class="' + estilo + '">' + faltas + '</span>');
-}
-
-function Registro() {
-}
-Registro.prototype = {
-  celula: null,
-  celulaTipo: null,
-  data: '',
-  linha: null,
-  registroEfetivo: 0,
-  timestamp: 0,
-  tipo: 'S',
-  justificativa: null,
-  destacarErroTipo: function() {
-     this.linha.cells[2].classList.add('erro');
-  },
-  destacarRegistroAlterado: function() {
-     this.linha.cells[1].classList.add('alterado');
-  },
-  formatarUltimoRegistro: function(somaParcial) {
-    this.linha.className = 'ultima';
-    var celula;
-    celula = this.linha.insertCell();
-    var minutos = milissegundosParaMinutos(somaParcial);
-    celula.textContent = formatarMinutos(minutos);
-    var classes = ['resultado'];
-    if (minutos < 0) {
-      classes.push('saldoNegativo');
-    }
-    if (Math.abs(minutos) < MINUTOS_DE_TOLERANCIA) {
-      classes.push('saldoIgnorado')
-    }
-    if (this.tipo == 'E') {
-      classes.push('erro');
-    }
-    celula.className = classes.join(' ');
-  }
-};
-Registro.prototype.constructor = Registro;
-Registro.fromLinha = function(linha) {
-  var timestamp = textoParaDataHora(linha.cells[0].textContent);
-  var registroEfetivo = textoParaDataHora(linha.cells[1].textContent);
-  var justificativa = linha.cells[3].textContent.trim();
-  if (justificativa === '') justificativa = linha.cells[4].textContent.trim();
-  if (justificativa === '') justificativa = null;
-  var registro = new Registro();
-  registro.linha = linha;
-  registro.timestamp = timestamp;
-  registro.registroEfetivo = registroEfetivo;
-  registro.tipo = (linha.cells[2].textContent === 'Entrada') ? 'E' : 'S';
-  registro.justificativa = justificativa;
-  return registro;
-};
-
-function textoParaData(texto) {
-  var [d, m, y] = texto.split(/[\/]/g);
-  var data = new Date(y, m - 1, d, 0, 0, 0, 0);
-  return data;
-}
-
-function milissegundosParaMinutos(ms) {
-  return Math.round(ms / 1000 / 60);
-}
-
-function formatarMinutos(minutos) {
-  var minutosAbsoluto = Math.abs(minutos);
-  var sinal = Math.sign(minutos);
-  var h = (minutosAbsoluto / 60) | 0;
-  var m = minutosAbsoluto % 60;
-  m = '0'.repeat(2 - m.toString().length) + m;
-  return (sinal < 0 ? '-' : '') + h + ':' + m;
 }
 
 /*** FUNÇÕES AUXILIARES ***/
@@ -330,7 +244,7 @@ var DateFactory = {
   hmsTexto: function(texto) {
     return new Date(Date.parse('T' + texto + 'Z'));
   }
-}
+};
 
 var DateHelper = {
   toISODate: function(data) {
@@ -339,7 +253,22 @@ var DateHelper = {
   toLocaleDate: function(data) {
     return data.toLocaleFormat('%d/%m/%Y');
   }
-}
+};
+
+var IntervalHelper = {
+  toMinutes: function(interval) {
+    return Math.round(interval / 60 / 1000);
+  },
+  toMinutesString: function(interval) {
+    var minutos = IntervalHelper.toMinutes(interval);
+    var minutosAbsoluto = Math.abs(minutos);
+    var sinal = Math.sign(minutos);
+    var h = (minutosAbsoluto / 60) | 0;
+    var m = minutosAbsoluto % 60;
+    m = '0'.repeat(2 - m.toString().length) + m;
+    return (sinal < 0 ? '-' : '') + h + ':' + m;
+  }
+};
 
 function Faltas() {
 }
@@ -365,3 +294,54 @@ Faltas.prototype.inserirApos = function(linha) {
   this.splice(0, this.length);
 };
 
+function Registro() {
+}
+Registro.prototype = {
+  celula: null,
+  celulaTipo: null,
+  data: '',
+  linha: null,
+  registroEfetivo: 0,
+  timestamp: 0,
+  tipo: 'S',
+  justificativa: null,
+  destacarErroTipo: function() {
+     this.linha.cells[2].classList.add('erro');
+  },
+  destacarRegistroAlterado: function() {
+     this.linha.cells[1].classList.add('alterado');
+  },
+  formatarUltimoRegistro: function(somaParcial) {
+    this.linha.className = 'ultima';
+    var celula;
+    celula = this.linha.insertCell();
+    var minutos = IntervalHelper.toMinutes(somaParcial);
+    celula.textContent = IntervalHelper.toMinutesString(somaParcial);
+    var classes = ['resultado'];
+    if (minutos < 0) {
+      classes.push('saldoNegativo');
+    }
+    if (Math.abs(minutos) < MINUTOS_DE_TOLERANCIA) {
+      classes.push('saldoIgnorado')
+    }
+    if (this.tipo == 'E') {
+      classes.push('erro');
+    }
+    celula.className = classes.join(' ');
+  }
+};
+Registro.prototype.constructor = Registro;
+Registro.fromLinha = function(linha) {
+  var timestamp = DateFactory.dataHoraTexto(linha.cells[0].textContent);
+  var registroEfetivo = DateFactory.dataHoraTexto(linha.cells[1].textContent);
+  var justificativa = linha.cells[3].textContent.trim();
+  if (justificativa === '') justificativa = linha.cells[4].textContent.trim();
+  if (justificativa === '') justificativa = null;
+  var registro = new Registro();
+  registro.linha = linha;
+  registro.timestamp = timestamp;
+  registro.registroEfetivo = registroEfetivo;
+  registro.tipo = (linha.cells[2].textContent === 'Entrada') ? 'E' : 'S';
+  registro.justificativa = justificativa;
+  return registro;
+};
