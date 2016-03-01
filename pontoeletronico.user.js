@@ -12,7 +12,7 @@
 
 var MINUTOS_DE_TOLERANCIA = 15;
 var PRESCRICAO = 90;
-var FERIADOS = new Set();
+var FERIADOS = {};
 
 $(function() {
   $('head').append('<style>' + [
@@ -40,6 +40,7 @@ window.XMLHttpRequest = function () {
           analisarRegistros();
         } catch (ex) {
           // Não está na tela que desejamos
+          throw ex;
         }
       }
     };
@@ -58,14 +59,54 @@ function analisarCalendario(id) {
   tabela.find('td[style="color:Red;width:14%;"] a[href]').each(function (indiceLink, link) {
     var diasDesdeDoisMil = Number(/','(\d+)'\)/.exec(link.href)[1]);
     var data = DateHelper.toISODate(DateFactory.diasDesdeDoisMil(diasDesdeDoisMil));
-    FERIADOS.add(data);
+    FERIADOS[data] = true;
   });
 }
 
 function analisarRegistros() {
-  var jornada = obterJornada();
+  var tabela = $('#ctl00_ContentPlaceHolder1_GridView1');
+  if (tabela.size() !== 1) return;
+  var elementoTabela = tabela.get(0);
+  var tbody = elementoTabela.createTBody();
+  var proximoIrmaoTabela = elementoTabela.nextSibling;
+  var paiTabela = elementoTabela.parentNode;
+  paiTabela.removeChild(elementoTabela);
+  tabela.find('tbody tr:has(th):not(:has(#tituloColunaSaldo))').each((indice, elemento) => $(elemento).append('<th id="tituloColunaSaldo">Saldo</th>'));
+
+  var linhas = Array.prototype.slice.call(tabela.find('tbody tr:has(td)'));
+  var registros = Registros.fromLinhas(linhas);
+  var registrosPorData = Datas.fromRegistros(registros);
+  console.log('registrosPorData', registrosPorData);
   var dataInicio = obterDataInicio();
   var dataFim = obterDataFim();
+  for (var dataAtual = dataInicio, timestampFim = dataFim.getTime(); dataAtual.getTime() <= timestampFim; dataAtual = DateFactory.diaSeguinte(dataAtual)) {
+    var textoDataAtual = DateHelper.toISODate(dataAtual);
+    var registrosDataAtual = registrosPorData[textoDataAtual];
+    if (typeof registrosDataAtual !== 'undefined') {
+      registrosDataAtual.forEach(function(registro, indiceRegistro) {
+        if (indiceRegistro === registrosDataAtual.length - 1) {
+          registro.formatarUltimoRegistro(0);
+        }
+        tbody.appendChild(registro.linha);
+      });
+    } else {
+      if (! ehFeriado(dataAtual)) {
+        new Falta(dataAtual).inserirEm(tbody);
+      }
+    }
+  }
+  
+
+
+
+
+  paiTabela.insertBefore(elementoTabela, proximoIrmaoTabela);
+  return;
+
+
+  /*** FIM ***/
+
+  var jornada = obterJornada();
   var diasUteis = 0;
   var diasUteisTrabalhados = 0;
   var diasNaoUteis = 0;
@@ -76,15 +117,6 @@ function analisarRegistros() {
   var ultimoRegistro = null;
   var compensacoes = [];
   var ignorarCompensacoes = false;
-  var tabela = $('#ctl00_ContentPlaceHolder1_GridView1');
-  if (tabela.size() === 1) {
-    var elementoTabela = tabela.get(0);
-    var proximoIrmaoTabela = elementoTabela.nextSibling;
-    var paiTabela = elementoTabela.parentNode;
-    paiTabela.removeChild(elementoTabela);
-  }
-  tabela.find('tbody tr:has(th):not(:has(#tituloColunaSaldo))').each((indice, elemento) => $(elemento).append('<th id="tituloColunaSaldo">Saldo</th>'));
-  var linhas = Array.prototype.slice.call(tabela.find('tbody tr:has(td)'));
   var linhasPorData = obterDatasAPartirDeLinhas(linhas);
   for (var dataAtual = dataInicio, timestampFim = dataFim.getTime(); dataAtual.getTime() <= timestampFim; dataAtual = DateFactory.diaSeguinte(dataAtual)) {
     var textoDataAtual = DateHelper.toISODate(dataAtual);
@@ -202,8 +234,9 @@ function obterDatasAPartirDeLinhas(linhas) {
   return datas;
 }
 
-function ehFeriado(data, texto) {
-  if (FERIADOS.has(texto)) {
+function ehFeriado(data) {
+  var texto = DateHelper.toISODate(data);
+  if (texto in FERIADOS) {
     return true;
   }
   if (data.getDay() == 0 || data.getDay() == 6) {
@@ -289,29 +322,48 @@ var IntervalHelper = {
   }
 };
 
-function Faltas() {
+function Datas() {
 }
-Faltas.prototype = Object.create(Array.prototype);
-Faltas.prototype.constructor = Faltas;
-Faltas.prototype.enfileirar = function(data) {
-  this.push(data);
+Datas.prototype = Object.create(null);
+Datas.fromRegistros = function(registros) {
+  var datas = new Datas();
+  registros.forEach(function(registro, indiceRegistro) {
+    if (! (registro.data in datas)) {
+      datas[registro.data] = new Registros();
+    }
+    var registrosDataAtual = datas[registro.data];
+    registrosDataAtual.push(registro);
+  });
+  return datas;
+};
+
+function Falta(data) {
+  this.data = DateHelper.toLocaleDate(data);
 }
-Faltas.prototype.gerarHTML = function(data) {
-  var celulaVazia = '<td><br/></td>';
-  return '<tr class="ultima" style="font-family: Arial; font-size: 8pt;"><td>' + DateHelper.toLocaleDate(data) + '</td>' + celulaVazia + '<td class="erro">Falta</td>' + celulaVazia.repeat(4) + '</tr>';
-};
-Faltas.prototype.inserirAntesDe = function(linha) {
-  return this.inserirApos(linha.previousSibling);
-};
-Faltas.prototype.inserirApos = function(linha) {
-  var ultimaLinha = linha;
-  for (var data of this) {
-    var linhaNova = $(this.gerarHTML(data));
-    $(ultimaLinha).after(linhaNova);
-    ultimaLinha = linhaNova;
+Falta.prototype = {
+  constructor: Falta,
+  data: '',
+  gerarHTML: function() {
+    var celulaVazia = '<td><br/></td>';
+    return '<tr class="ultima" style="font-family: Arial; font-size: 8pt;"><td>' + this.data + '</td>' + celulaVazia + '<td class="erro">Falta</td>' + celulaVazia.repeat(4) + '</tr>';
+  },
+  inserirEm: function(tbody) {
+    var linhaNova = $(this.gerarHTML()).get(0);
+    tbody.appendChild(linhaNova);
   }
-  this.splice(0, this.length);
 };
+
+function Registros() {
+}
+Registros.prototype = Object.create(Array.prototype);
+Registros.prototype.constructor = Registros;
+Registros.fromLinhas = function(linhas) {
+  var registros = new Registros();
+  linhas.forEach(function(linha, indiceLinha) {
+    registros[registros.length++] = Registro.fromLinha(linha);
+  });
+  return registros;
+}
 
 function Registro() {
 }
@@ -352,6 +404,7 @@ Registro.prototype = {
 Registro.prototype.constructor = Registro;
 Registro.fromLinha = function(linha) {
   var timestamp = DateFactory.dataHoraTexto(linha.cells[0].textContent);
+  var data = DateHelper.toISODate(timestamp);
   var registroEfetivo = DateFactory.dataHoraTexto(linha.cells[1].textContent);
   var justificativa = linha.cells[3].textContent.trim();
   if (justificativa === '') justificativa = linha.cells[4].textContent.trim();
@@ -359,6 +412,7 @@ Registro.fromLinha = function(linha) {
   var registro = new Registro();
   registro.linha = linha;
   registro.timestamp = timestamp;
+  registro.data = data;
   registro.registroEfetivo = registroEfetivo;
   registro.tipo = (linha.cells[2].textContent === 'Entrada') ? 'E' : 'S';
   registro.justificativa = justificativa;
