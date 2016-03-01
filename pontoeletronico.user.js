@@ -11,6 +11,7 @@
 'use strict';
 
 var MINUTOS_DE_TOLERANCIA = 15;
+var PRESCRICAO = 90;
 var FERIADOS = new Set();
 
 $(function() {
@@ -39,8 +40,6 @@ window.XMLHttpRequest = function () {
           analisarRegistros();
         } catch (ex) {
           // Não está na tela que desejamos
-          throw ex;
-          return;
         }
       }
     };
@@ -75,7 +74,8 @@ function analisarRegistros() {
   var somaTotal = 0;
   var faltas = new Faltas();
   var ultimoRegistro = null;
-  var primeiraCompensacao = null;
+  var compensacoes = [];
+  var ignorarCompensacoes = false;
   var tabela = $('#ctl00_ContentPlaceHolder1_GridView1');
   if (tabela.size() === 1) {
     var elementoTabela = tabela.get(0);
@@ -127,12 +127,17 @@ function analisarRegistros() {
       } else {
         ++diasUteisTrabalhados;
       }
-      if (registroAtual.justificativa === 'Compensação por serviço extraordinário' && primeiraCompensacao === null) {
-        primeiraCompensacao = dataAtual;
+      if (registroAtual.justificativa === 'Compensação por serviço extraordinário') {
+        compensacoes.push(dataAtual);
+      } else if (/zerado/i.exec(registroAtual.justificativa)) {
+        somaParcial = 0;
+        somaTotal = 0;
+        ignorarCompensacoes = true;
       }
     } else {
       if (! feriado) {
         faltas.enfileirar(dataAtual);
+        compensacoes.push(dataAtual);
       }
     }
     var minutosParcial = IntervalHelper.toMinutes(somaParcial);
@@ -147,16 +152,23 @@ function analisarRegistros() {
   if (faltas.length && ultimoRegistro) {
     faltas.inserirApos(ultimoRegistro.linha);
   }
+  var dataAConsiderar = DateFactory.deslocarDias(dataFim, - PRESCRICAO);
+  for (var i = compensacoes.length - 1; i >= 0; --i) {
+    if (compensacoes[i].getTime() > dataAConsiderar.getTime()) {
+      dataAConsiderar = DateFactory.deslocarDias(compensacoes[i], - PRESCRICAO);
+    }
+  }
   var saldo = $('#ctl00_ContentPlaceHolder1_lblSalR');
-  saldo.html(IntervalHelper.toMinutesString(somaTotal)).css('color', (somaTotal < 0) ? '#c33' : '#262');
-  saldo.after('<br/><span style="font-size: 0.8em;"> (ignorando diferenças inferiores a ' + MINUTOS_DE_TOLERANCIA + ' minutos de tolerância).</span>');
+  if (ignorarCompensacoes || dataInicio.getTime() === dataAConsiderar.getTime()) {
+    saldo.html(IntervalHelper.toMinutesString(somaTotal)).css('color', (somaTotal < 0) ? '#c33' : '#262');
+    saldo.after('<br/><span style="font-size: 0.8em;"> (ignorando diferenças inferiores a ' + MINUTOS_DE_TOLERANCIA + ' minutos de tolerância).</span>');
+  } else {
+    saldo.html('Para cálculo do saldo correto selecione como data de início:<br/>' + DateHelper.toDateExtenso(dataAConsiderar)).css({'font-weight': 'normal', 'color': '#c33'});
+  }
   definirDiasTrabalhados(diasUteis, diasUteisTrabalhados, diasNaoUteis, diasNaoUteisTrabalhados);
   if (tabela.size() === 1) {
     paiTabela.insertBefore(elementoTabela, proximoIrmaoTabela);
   }
-  console.log(DateHelper.toLocaleDate(dataInicio), DateHelper.toLocaleDate(dataFim), diasUteis + diasNaoUteis);
-  var dataAConsiderar = DateFactory.deslocarDias(primeiraCompensacao || dataFim, -89);
-  console.log('90 dias: ', DateHelper.toLocaleDate(dataAConsiderar));
 }
 
 function obterJornada() {
@@ -246,14 +258,21 @@ var DateFactory = {
   }
 };
 
-var DateHelper = {
-  toISODate: function(data) {
-    return data.toLocaleFormat('%Y-%m-%d');
-  },
-  toLocaleDate: function(data) {
-    return data.toLocaleFormat('%d/%m/%Y');
-  }
-};
+var DateHelper = (function() {
+  var extenso = new Intl.DateTimeFormat('pt-BR', {day: 'numeric', month: 'long', year: 'numeric'});
+  var normal = new Intl.DateTimeFormat('pt-BR');
+  return {
+    toDateExtenso: function(data) {
+      return extenso.format(data);
+    },
+    toISODate: function(data) {
+      return data.toLocaleFormat('%Y-%m-%d');
+    },
+    toLocaleDate: function(data) {
+      return normal.format(data);
+    }
+  };
+})();
 
 var IntervalHelper = {
   toMinutes: function(interval) {
