@@ -66,36 +66,38 @@ function analisarCalendario(id) {
 function analisarRegistros() {
   var tabela = $('#ctl00_ContentPlaceHolder1_GridView1');
   if (tabela.size() !== 1) return;
+
   var elementoTabela = tabela.get(0);
   var tbody = elementoTabela.createTBody();
   var proximoIrmaoTabela = elementoTabela.nextSibling;
   var paiTabela = elementoTabela.parentNode;
   paiTabela.removeChild(elementoTabela);
+
   tabela.find('tbody tr:has(th):not(:has(#tituloColunaSaldo))').each((indice, elemento) => $(elemento).append('<th id="tituloColunaSaldo">Saldo</th>'));
 
   var linhas = Array.prototype.slice.call(tabela.find('tbody tr:has(td)'));
   var registros = Registros.fromLinhas(linhas);
-  var registrosPorData = Datas.fromRegistros(registros);
-  console.log('registrosPorData', registrosPorData);
+  var datas = Datas.fromRegistros(registros);
   var dataInicio = obterDataInicio();
   var dataFim = obterDataFim();
-  for (var dataAtual = dataInicio, timestampFim = dataFim.getTime(); dataAtual.getTime() <= timestampFim; dataAtual = DateFactory.diaSeguinte(dataAtual)) {
-    var textoDataAtual = DateHelper.toISODate(dataAtual);
-    var registrosDataAtual = registrosPorData[textoDataAtual];
-    if (typeof registrosDataAtual !== 'undefined') {
+	datas.analisarIntervalo(dataInicio, dataFim);
+  var intervalo = Object.keys(datas).sort();
+  for (var data of intervalo) {
+    var registrosDataAtual = datas[data];
+    if (registrosDataAtual instanceof Falta) {
+//      if (! ehFeriado(dataAtual)) {
+        registrosDataAtual.inserirEm(tbody);
+//      }
+    } else {
       registrosDataAtual.forEach(function(registro, indiceRegistro) {
         if (indiceRegistro === registrosDataAtual.length - 1) {
           registro.formatarUltimoRegistro(0);
         }
         tbody.appendChild(registro.linha);
       });
-    } else {
-      if (! ehFeriado(dataAtual)) {
-        new Falta(dataAtual).inserirEm(tbody);
-      }
     }
   }
-  
+
 
 
 
@@ -324,8 +326,19 @@ var IntervalHelper = {
 
 function Datas() {
 }
-Datas.prototype = Object.create(null);
-Datas.fromRegistros = function(registros) {
+Datas.prototype = Object.create({}, {
+  analisarIntervalo: {
+    value: function(inicio, fim) {
+      for (var dataAtual = inicio, fimMs = fim.getTime(); dataAtual.getTime() <= fimMs; dataAtual = DateFactory.diaSeguinte(dataAtual)) {
+        var textoData = DateHelper.toISODate(dataAtual);
+        if (! (textoData in this) && ! ehFeriado(dataAtual)) {
+          this[textoData] = new Falta(dataAtual);
+        }
+      }
+    }
+  }
+});
+Object.defineProperty(Datas, 'fromRegistros', { value: function(registros) {
   var datas = new Datas();
   registros.forEach(function(registro, indiceRegistro) {
     if (! (registro.data in datas)) {
@@ -335,7 +348,7 @@ Datas.fromRegistros = function(registros) {
     registrosDataAtual.push(registro);
   });
   return datas;
-};
+}});
 
 function Falta(data) {
   this.data = DateHelper.toLocaleDate(data);
