@@ -64,6 +64,14 @@ function analisarCalendario(id) {
 }
 
 function analisarRegistros() {
+
+  var jornada = obterJornada();
+  DiaUtil.definirJornadaPadrao(jornada);
+
+  var dataInicio = obterDataInicio();
+  var dataFim = obterDataFim();
+  var intervalo = new Intervalo(dataInicio, dataFim);
+
   var tabela = $('#ctl00_ContentPlaceHolder1_GridView1');
   if (tabela.size() !== 1) return;
 
@@ -76,28 +84,25 @@ function analisarRegistros() {
   tabela.find('tbody tr:has(th):not(:has(#tituloColunaSaldo))').each((indice, elemento) => $(elemento).append('<th id="tituloColunaSaldo">Saldo</th>'));
 
   var linhas = Array.prototype.slice.call(tabela.find('tbody tr:has(td)'));
-  var registros = Registros.fromLinhas(linhas);
-  var datas = Datas.fromRegistros(registros);
-  var dataInicio = obterDataInicio();
-  var dataFim = obterDataFim();
-	datas.analisarIntervalo(dataInicio, dataFim);
-  var intervalo = Object.keys(datas).sort();
-  for (var data of intervalo) {
-    var registrosDataAtual = datas[data];
-    if (registrosDataAtual instanceof Falta) {
-//      if (! ehFeriado(dataAtual)) {
-        registrosDataAtual.inserirEm(tbody);
-//      }
-    } else {
-      registrosDataAtual.forEach(function(registro, indiceRegistro) {
-        if (indiceRegistro === registrosDataAtual.length - 1) {
-          registro.formatarUltimoRegistro(0);
-        }
-        tbody.appendChild(registro.linha);
-      });
+  intervalo.analisarLinhas(linhas);
+
+  var diasUteisTrabalhados = 0;
+  var diasNaoUteisTrabalhados = 0;
+  for (var dia in intervalo) {
+    var objDia = intervalo[dia]
+    objDia.inserirLinhasEm(tbody);
+    if (objDia instanceof DiaUtil) {
+      if (! (objDia.ultimoRegistro instanceof Falta)) {
+        ++diasUteisTrabalhados;
+      }
+    } else if (objDia instanceof Feriado) {
+      if (objDia.ultimoRegistro) {
+        ++diasNaoUteisTrabalhados;
+      }
     }
   }
 
+  definirDiasTrabalhados(intervalo.diasUteis, diasUteisTrabalhados, intervalo.feriados, diasNaoUteisTrabalhados);
 
 
 
@@ -108,7 +113,6 @@ function analisarRegistros() {
 
   /*** FIM ***/
 
-  var jornada = obterJornada();
   var diasUteis = 0;
   var diasUteisTrabalhados = 0;
   var diasNaoUteis = 0;
@@ -241,7 +245,7 @@ function ehFeriado(data) {
   if (texto in FERIADOS) {
     return true;
   }
-  if (data.getDay() == 0 || data.getDay() == 6) {
+  if (data.getDay() % 6 == 0) {
     return true;
   }
   return false;
@@ -324,6 +328,111 @@ var IntervalHelper = {
   }
 };
 
+/*** CLASSES ***/
+
+function Dia(data) {
+  this.data = data;
+  this.registros = [];
+}
+Dia.prototype = {
+  data: null,
+  jornadaPadrao: 0,
+  registros: null,
+  trabalhado: 0,
+  ultimoRegistro: null,
+  inserirLinhasEm: function(tbody) {
+    if (this.ultimoRegistro !== null) {
+      this.ultimoRegistro.formatarUltimoRegistro(this.trabalhado - this.jornadaPadrao);
+    }
+    for (var registro of this.registros) {
+      tbody.appendChild(registro.linha);
+    }
+  },
+  inserirRegistro: function(registro) {
+    var indice = this.registros.push(registro) - 1;
+    registro = this.registros[indice];
+    var ultimoTipo = this.ultimoRegistro ? this.ultimoRegistro.tipo : 'S';
+    if (ultimoTipo === 'S') {
+      if (registro.tipo === 'S') {
+        registro.destacarErroTipo();
+        registro.tipo = 'E';
+      }
+    } else if (ultimoTipo === 'E') {
+      if (registro.tipo === 'E') {
+        registro.destacarErroTipo();
+        registro.tipo = 'S';
+      }
+      this.trabalhado += registro.dataHora.getTime() - this.ultimoRegistro.dataHora.getTime();
+    }
+    this.ultimoRegistro = registro;
+  }
+};
+Dia.prototype.constructor = Dia;
+Dia.criar = function(data, textoData) {
+  if (textoData in FERIADOS || data.getDay() % 6 === 0) {
+    return new Feriado(data);
+  } else {
+    return new DiaUtil(data);
+  }
+};
+
+function Feriado(data) {
+  Dia.call(this, data);
+}
+Feriado.prototype = Object.create(Dia.prototype);
+Feriado.prototype.constructor = Feriado;
+
+function DiaUtil(data) {
+  Dia.call(this, data);
+}
+DiaUtil.prototype = Object.create(Dia.prototype);
+DiaUtil.prototype.constructor = DiaUtil;
+DiaUtil.prototype.inserirLinhasEm = function(tbody) {
+  if (this.registros.length === 0) {
+    var indice = this.registros.push(new Falta(this.data)) - 1;
+    this.ultimoRegistro = this.registros[indice];
+  }
+  Dia.prototype.inserirLinhasEm.call(this, tbody);
+}
+
+DiaUtil.definirJornadaPadrao = function(jornadaPadrao) {
+  DiaUtil.prototype.jornadaPadrao = jornadaPadrao;
+};
+
+function Intervalo(inicio, fim) {
+  Object.defineProperties(this, {
+    diasUteis: { value: 0, writable: true },
+    feriados: { value: 0, writable: true }
+  });
+  for (var dataAtual = inicio, fimMs = fim.getTime(); dataAtual.getTime() <= fimMs; dataAtual = DateFactory.diaSeguinte(dataAtual)) {
+    var textoDataAtual = DateHelper.toISODate(dataAtual);
+    var dia = this[textoDataAtual] = Dia.criar(dataAtual, textoDataAtual);
+    if (dia instanceof DiaUtil) {
+      ++this.diasUteis;
+    } else {
+      ++this.feriados;
+    }
+  }
+}
+Intervalo.prototype = Object.create(null, {
+  analisarLinhas: {
+    value: function(linhas) {
+      for (var linha of linhas) {
+        var registro = Registro.fromLinha(linha);
+        var dia = this[registro.textoData];
+        dia.inserirRegistro(registro);
+      }
+      console.log(this);
+    }
+  },
+  constructor: { value: Intervalo },
+  diasUteis: { value: 0 },
+  feriados: { value: 0 }
+});
+
+
+
+
 function Datas() {
 }
 Datas.prototype = Object.create({}, {
@@ -350,22 +459,6 @@ Object.defineProperty(Datas, 'fromRegistros', { value: function(registros) {
   return datas;
 }});
 
-function Falta(data) {
-  this.data = DateHelper.toLocaleDate(data);
-}
-Falta.prototype = {
-  constructor: Falta,
-  data: '',
-  gerarHTML: function() {
-    var celulaVazia = '<td><br/></td>';
-    return '<tr class="ultima" style="font-family: Arial; font-size: 8pt;"><td>' + this.data + '</td>' + celulaVazia + '<td class="erro">Falta</td>' + celulaVazia.repeat(4) + '</tr>';
-  },
-  inserirEm: function(tbody) {
-    var linhaNova = $(this.gerarHTML()).get(0);
-    tbody.appendChild(linhaNova);
-  }
-};
-
 function Registros() {
 }
 Registros.prototype = Object.create(Array.prototype);
@@ -379,14 +472,16 @@ Registros.fromLinhas = function(linhas) {
 }
 
 function Registro() {
+  this.alteracao = {
+    dataHora: null,
+    usuario: ''
+  };
 }
 Registro.prototype = {
-  celula: null,
-  celulaTipo: null,
-  data: '',
   linha: null,
-  registroEfetivo: 0,
-  timestamp: 0,
+  dataHora: null,
+  textoData: '',
+  alteracao: null,
   tipo: 'S',
   justificativa: null,
   destacarErroTipo: function() {
@@ -416,18 +511,30 @@ Registro.prototype = {
 };
 Registro.prototype.constructor = Registro;
 Registro.fromLinha = function(linha) {
-  var timestamp = DateFactory.dataHoraTexto(linha.cells[0].textContent);
-  var data = DateHelper.toISODate(timestamp);
-  var registroEfetivo = DateFactory.dataHoraTexto(linha.cells[1].textContent);
+  var dataHora = DateFactory.dataHoraTexto(linha.cells[0].textContent);
+  var dataHoraAlteracao = DateFactory.dataHoraTexto(linha.cells[1].textContent);
+  var tipo = (linha.cells[2].textContent === 'Entrada') ? 'E' : 'S';
   var justificativa = linha.cells[3].textContent.trim();
   if (justificativa === '') justificativa = linha.cells[4].textContent.trim();
   if (justificativa === '') justificativa = null;
+  var usuarioAlteracao = linha.cells[5].textContent;
+  
+  var textoData = DateHelper.toISODate(dataHora);
+  
   var registro = new Registro();
   registro.linha = linha;
-  registro.timestamp = timestamp;
-  registro.data = data;
-  registro.registroEfetivo = registroEfetivo;
-  registro.tipo = (linha.cells[2].textContent === 'Entrada') ? 'E' : 'S';
+  registro.dataHora = dataHora;
+  registro.alteracao.dataHora = dataHoraAlteracao;
+  registro.tipo = tipo;
   registro.justificativa = justificativa;
+  registro.alteracao.usuario = usuarioAlteracao;
+  registro.textoData = textoData;
   return registro;
 };
+
+function Falta(data) {
+  var celulaVazia = '<td><br/></td>';
+  this.linha = $('<tr class="ultima" style="font-family: Arial; font-size: 8pt;"><td>' + DateHelper.toLocaleDate(data) + '</td>' + celulaVazia + '<td class="erro">Falta</td>' + celulaVazia.repeat(3) + '</tr>').get(0);
+}
+Falta.prototype = Object.create(Registro.prototype);
+Falta.prototype.constructor = Falta;
