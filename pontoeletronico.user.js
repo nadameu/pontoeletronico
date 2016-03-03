@@ -16,7 +16,7 @@ var FERIADOS = {};
 
 $(function() {
   $('head').append('<style>' + [
-    'tr.ultima { border-bottom: 2px solid black; }',
+    'tr.ultima { border-width: 0 0 2px 0; border-color: black; border-style: none none solid none; }',
     'span.naoUteisTrabalhados { font-weight: bold; color: #262; }',
     'span.faltas { font-weight: bold; color: #c33; }',
     'td.resultado { font-weight: bold; color: #262; border-color: #696969; }',
@@ -86,127 +86,40 @@ function analisarRegistros() {
   var linhas = Array.prototype.slice.call(tabela.find('tbody tr:has(td)'));
   intervalo.analisarLinhas(linhas);
 
-  var diasUteisTrabalhados = 0;
-  var diasNaoUteisTrabalhados = 0;
-  for (var dia in intervalo) {
-    var objDia = intervalo[dia]
-    objDia.inserirLinhasEm(tbody);
-    if (objDia instanceof DiaUtil) {
-      if (! (objDia.ultimoRegistro instanceof Falta)) {
-        ++diasUteisTrabalhados;
-      }
-    } else if (objDia instanceof Feriado) {
-      if (objDia.ultimoRegistro) {
-        ++diasNaoUteisTrabalhados;
-      }
+  var datas = Object.keys(intervalo);
+  var indice = datas.length - 1;
+  var contagem = 0;
+  while (contagem <= PRESCRICAO && indice > -1) {
+    var dataAtual = datas[indice];
+    var dia = intervalo[dataAtual];
+    if (dia.compensacao || (dia.falta && (dia instanceof DiaUtil))) {
+      contagem = 0;
     }
+    ++contagem;
+    --indice;
   }
-
-  definirDiasTrabalhados(intervalo.diasUteis, diasUteisTrabalhados, intervalo.feriados, diasNaoUteisTrabalhados);
-
-
-
+  
+  for (var i = indice; i > -1; --i) {
+    intervalo[ datas[i] ].saldoConsiderado = 0;
+  }
+  
+  intervalo.inserirLinhasEm(tbody);
+  
+  var saldo = $('#ctl00_ContentPlaceHolder1_lblSalR');
+  saldo.html(IntervalHelper.toMinutesString(intervalo.saldoConsiderado)).css('color', (intervalo.saldoConsiderado < 0) ? '#c33' : '#262');
+  var tabelaSaldo = saldo.parents('table:first');
+  var aviso = $('<p>Ignorando diferenças inferiores a ' + MINUTOS_DE_TOLERANCIA + ' minutos de tolerância.</p>').css({textAlign: 'right', fontSize: '0.8em'});
+  tabelaSaldo.after(aviso);
+  if (dataInicio > intervalo[dataAtual].data) {
+    aviso.append('<br/><span style="color: #c33;">Para cálculo do saldo correto selecione como data de início:<br/>' + DateHelper.toDateExtenso(intervalo[dataAtual].data) + '.</span>');
+  } else {
+    aviso.append('<br/>Considerando apenas registros a partir de ' + DateHelper.toLocaleDate(intervalo[dataAtual].data) + ' (' + PRESCRICAO +' dias de prescrição).');
+  }
+    
+  definirDiasTrabalhados(intervalo.diasUteis, intervalo.diasUteisTrabalhados, intervalo.feriados, intervalo.feriadosTrabalhados);
 
   paiTabela.insertBefore(elementoTabela, proximoIrmaoTabela);
-  return;
 
-
-  /*** FIM ***/
-
-  var diasUteis = 0;
-  var diasUteisTrabalhados = 0;
-  var diasNaoUteis = 0;
-  var diasNaoUteisTrabalhados = 0;
-  var somaParcial = 0;
-  var somaTotal = 0;
-  var faltas = new Faltas();
-  var ultimoRegistro = null;
-  var compensacoes = [];
-  var ignorarCompensacoes = false;
-  var linhasPorData = obterDatasAPartirDeLinhas(linhas);
-  for (var dataAtual = dataInicio, timestampFim = dataFim.getTime(); dataAtual.getTime() <= timestampFim; dataAtual = DateFactory.diaSeguinte(dataAtual)) {
-    var textoDataAtual = DateHelper.toISODate(dataAtual);
-    var feriado = ehFeriado(dataAtual, textoDataAtual);
-    if (feriado) {
-      ++diasNaoUteis;
-      somaParcial = 0;
-    } else {
-      ++diasUteis;
-      somaParcial = 0 - jornada.getTime();
-    }
-    if (textoDataAtual in linhasPorData) {
-      var registroAnterior = new Registro();
-      var linhasDataAtual = linhasPorData[textoDataAtual];
-      for (var linha of linhasDataAtual) {
-        if (faltas.length) {
-          faltas.inserirAntesDe(linhas[linha]);
-        }
-        var registroAtual = Registro.fromLinha(linhas[linha]);
-        if (registroAnterior.tipo == 'S') {
-          if (registroAtual.tipo == 'S') {
-            registroAtual.destacarErroTipo();
-            registroAtual.tipo = 'E';
-          }
-        } else if (registroAnterior.tipo == 'E') {
-          if (registroAtual.tipo == 'E') {
-            registroAtual.destacarErroTipo();
-            registroAtual.tipo = 'S';
-          }
-          somaParcial += registroAtual.timestamp.getTime() - registroAnterior.timestamp.getTime();
-        }
-        if (registroAtual.timestamp - registroAtual.registroEfetivo !== 0) {
-          registroAtual.destacarRegistroAlterado();
-        }
-        ultimoRegistro = registroAnterior = registroAtual;
-      }
-      ultimoRegistro.formatarUltimoRegistro(somaParcial);
-      if (feriado) {
-        ++diasNaoUteisTrabalhados;
-      } else {
-        ++diasUteisTrabalhados;
-      }
-      if (registroAtual.justificativa === 'Compensação por serviço extraordinário') {
-        compensacoes.push(dataAtual);
-      } else if (/zerado/i.exec(registroAtual.justificativa)) {
-        somaParcial = 0;
-        somaTotal = 0;
-        ignorarCompensacoes = true;
-      }
-    } else {
-      if (! feriado) {
-        faltas.enfileirar(dataAtual);
-        compensacoes.push(dataAtual);
-      }
-    }
-    var minutosParcial = IntervalHelper.toMinutes(somaParcial);
-    if (Math.abs(minutosParcial) >= MINUTOS_DE_TOLERANCIA) {
-      somaTotal += somaParcial;
-    }
-    if (! feriado && textoDataAtual in linhasPorData) {
-      ultimoRegistro.formatarUltimoRegistro(somaTotal);
-    }
-    somaParcial = 0;
-  }
-  if (faltas.length && ultimoRegistro) {
-    faltas.inserirApos(ultimoRegistro.linha);
-  }
-  var dataAConsiderar = DateFactory.deslocarDias(dataFim, - PRESCRICAO);
-  for (var i = compensacoes.length - 1; i >= 0; --i) {
-    if (compensacoes[i].getTime() > dataAConsiderar.getTime()) {
-      dataAConsiderar = DateFactory.deslocarDias(compensacoes[i], - PRESCRICAO);
-    }
-  }
-  var saldo = $('#ctl00_ContentPlaceHolder1_lblSalR');
-  if (ignorarCompensacoes || dataInicio.getTime() === dataAConsiderar.getTime()) {
-    saldo.html(IntervalHelper.toMinutesString(somaTotal)).css('color', (somaTotal < 0) ? '#c33' : '#262');
-    saldo.after('<br/><span style="font-size: 0.8em;"> (ignorando diferenças inferiores a ' + MINUTOS_DE_TOLERANCIA + ' minutos de tolerância).</span>');
-  } else {
-    saldo.html('Para cálculo do saldo correto selecione como data de início:<br/>' + DateHelper.toDateExtenso(dataAConsiderar)).css({'font-weight': 'normal', 'color': '#c33'});
-  }
-  definirDiasTrabalhados(diasUteis, diasUteisTrabalhados, diasNaoUteis, diasNaoUteisTrabalhados);
-  if (tabela.size() === 1) {
-    paiTabela.insertBefore(elementoTabela, proximoIrmaoTabela);
-  }
 }
 
 function obterJornada() {
@@ -224,31 +137,6 @@ function obterDataFim() {
   var texto = $('#ctl00_ContentPlaceHolder1_lblFim').get(0).textContent;
   var textoData = /^Fim: (\d{2}\/\d{2}\/\d{4})$/.exec(texto)[1];
   return DateFactory.dataTexto(textoData);
-}
-
-function obterDatasAPartirDeLinhas(linhas) {
-  var datas = {};
-  for (var i = 0, l = linhas.length; i < l; ++i) {
-    var linha = linhas[i];
-    var texto = linha.cells[0].textContent;
-    var data = DateHelper.toISODate(DateFactory.dataHoraTexto(texto));
-    if (! (data in datas)) {
-      datas[data] = new Set();
-    }
-    datas[data].add(i);
-  }
-  return datas;
-}
-
-function ehFeriado(data) {
-  var texto = DateHelper.toISODate(data);
-  if (texto in FERIADOS) {
-    return true;
-  }
-  if (data.getDay() % 6 == 0) {
-    return true;
-  }
-  return false;
 }
 
 function definirDiasTrabalhados(diasUteis, diasUteisTrabalhados, diasNaoUteis, diasNaoUteisTrabalhados) {
@@ -335,17 +223,21 @@ function Dia(data) {
   this.registros = [];
 }
 Dia.prototype = {
+  compensacao: false,
   data: null,
+  falta: true,
   jornadaPadrao: 0,
   registros: null,
+  saldo: 0,
+  saldoConsiderado: 0,
   trabalhado: 0,
   ultimoRegistro: null,
   inserirLinhasEm: function(tbody) {
-    if (this.ultimoRegistro !== null) {
-      this.ultimoRegistro.formatarUltimoRegistro(this.trabalhado - this.jornadaPadrao);
-    }
-    for (var registro of this.registros) {
-      tbody.appendChild(registro.linha);
+    this.getLinhas().forEach(function(linha, indiceLinha) {
+      tbody.appendChild(linha);
+    });
+    if (this.registros.length !== 0) {
+      this.ultimoRegistro.formatarUltimoRegistro(this.saldo, this.saldoConsiderado);
     }
   },
   inserirRegistro: function(registro) {
@@ -363,8 +255,18 @@ Dia.prototype = {
         registro.tipo = 'S';
       }
       this.trabalhado += registro.dataHora.getTime() - this.ultimoRegistro.dataHora.getTime();
+      this.saldo = this.trabalhado - this.jornadaPadrao.getTime();
+      if (Math.abs(this.saldo) < MINUTOS_DE_TOLERANCIA * 60 * 1000) {
+        this.saldoConsiderado = 0;
+      } else {
+        this.saldoConsiderado = this.saldo;
+      }
+    }
+    if (registro.justificativa === 'Compensação por serviço extraordinário') {
+      this.compensacao = true;
     }
     this.ultimoRegistro = registro;
+    this.falta = false;
   }
 };
 Dia.prototype.constructor = Dia;
@@ -381,19 +283,25 @@ function Feriado(data) {
 }
 Feriado.prototype = Object.create(Dia.prototype);
 Feriado.prototype.constructor = Feriado;
+Feriado.prototype.getLinhas = function() {
+  if (this.falta) {
+    return [];
+  } else {
+    return Array.map(this.registros, (registro) => registro.linha);
+  }
+};
 
 function DiaUtil(data) {
   Dia.call(this, data);
 }
 DiaUtil.prototype = Object.create(Dia.prototype);
 DiaUtil.prototype.constructor = DiaUtil;
-DiaUtil.prototype.inserirLinhasEm = function(tbody) {
-  if (this.registros.length === 0) {
-    var indice = this.registros.push(new Falta(this.data)) - 1;
-    this.ultimoRegistro = this.registros[indice];
+DiaUtil.prototype.getLinhas = function() {
+  if (this.falta) {
+    this.ultimoRegistro = this.registros[this.registros.length++] = new Falta(this.data);
   }
-  Dia.prototype.inserirLinhasEm.call(this, tbody);
-}
+  return Array.map(this.registros, (registro) => registro.linha);
+};
 
 DiaUtil.definirJornadaPadrao = function(jornadaPadrao) {
   DiaUtil.prototype.jornadaPadrao = jornadaPadrao;
@@ -402,7 +310,10 @@ DiaUtil.definirJornadaPadrao = function(jornadaPadrao) {
 function Intervalo(inicio, fim) {
   Object.defineProperties(this, {
     diasUteis: { value: 0, writable: true },
-    feriados: { value: 0, writable: true }
+    diasUteisTrabalhados: { value: 0, writable: true },
+    feriados: { value: 0, writable: true },
+    feriadosTrabalhados: { value: 0, writable: true },
+    saldoConsiderado: { value: 0, writable: true }
   });
   for (var dataAtual = inicio, fimMs = fim.getTime(); dataAtual.getTime() <= fimMs; dataAtual = DateFactory.diaSeguinte(dataAtual)) {
     var textoDataAtual = DateHelper.toISODate(dataAtual);
@@ -415,61 +326,54 @@ function Intervalo(inicio, fim) {
   }
 }
 Intervalo.prototype = Object.create(null, {
+  constructor: { value: Intervalo },
+  diasUteis: { value: 0 },
+  diasUteisTrabalhados: { value: 0 },
+  feriados: { value: 0 },
+  feriadosTrabalhados: { value: 0 },
+  saldoConsiderado: { value: 0 },
   analisarLinhas: {
     value: function(linhas) {
+      var datas = Object.keys(this);
+      var indice = 0;
       for (var linha of linhas) {
         var registro = Registro.fromLinha(linha);
-        var dia = this[registro.textoData];
+        var data = registro.textoData;
+        while (data !== datas[indice]) {
+          var dia = this[ datas[indice++] ];
+          this.verificarDiaTrabalhado(dia);
+        }
+        var dia = this[data];
         dia.inserirRegistro(registro);
+      }
+      while (indice < datas.length) {
+        var dia = this[ datas[indice++] ];
+        this.verificarDiaTrabalhado(dia);
       }
       console.log(this);
     }
   },
-  constructor: { value: Intervalo },
-  diasUteis: { value: 0 },
-  feriados: { value: 0 }
-});
-
-
-
-
-function Datas() {
-}
-Datas.prototype = Object.create({}, {
-  analisarIntervalo: {
-    value: function(inicio, fim) {
-      for (var dataAtual = inicio, fimMs = fim.getTime(); dataAtual.getTime() <= fimMs; dataAtual = DateFactory.diaSeguinte(dataAtual)) {
-        var textoData = DateHelper.toISODate(dataAtual);
-        if (! (textoData in this) && ! ehFeriado(dataAtual)) {
-          this[textoData] = new Falta(dataAtual);
+  inserirLinhasEm: {
+    value: function(tbody) {
+      for (var data in this) {
+        var dia = this[data];
+        this.saldoConsiderado += dia.saldoConsiderado;
+        dia.inserirLinhasEm(tbody);
+      }
+    }
+  },
+  verificarDiaTrabalhado: {
+    value: function(dia) {
+      if (! dia.falta) {
+        if (dia instanceof DiaUtil) {
+          ++this.diasUteisTrabalhados;
+        } else if (dia instanceof Feriado) {
+          ++this.feriadosTrabalhados;
         }
       }
     }
   }
 });
-Object.defineProperty(Datas, 'fromRegistros', { value: function(registros) {
-  var datas = new Datas();
-  registros.forEach(function(registro, indiceRegistro) {
-    if (! (registro.data in datas)) {
-      datas[registro.data] = new Registros();
-    }
-    var registrosDataAtual = datas[registro.data];
-    registrosDataAtual.push(registro);
-  });
-  return datas;
-}});
-
-function Registros() {
-}
-Registros.prototype = Object.create(Array.prototype);
-Registros.prototype.constructor = Registros;
-Registros.fromLinhas = function(linhas) {
-  var registros = new Registros();
-  linhas.forEach(function(linha, indiceLinha) {
-    registros[registros.length++] = Registro.fromLinha(linha);
-  });
-  return registros;
-}
 
 function Registro() {
   this.alteracao = {
@@ -490,17 +394,16 @@ Registro.prototype = {
   destacarRegistroAlterado: function() {
      this.linha.cells[1].classList.add('alterado');
   },
-  formatarUltimoRegistro: function(somaParcial) {
+  formatarUltimoRegistro: function(saldo, saldoConsiderado) {
     this.linha.className = 'ultima';
     var celula;
     celula = this.linha.insertCell();
-    var minutos = IntervalHelper.toMinutes(somaParcial);
-    celula.textContent = IntervalHelper.toMinutesString(somaParcial);
+    celula.textContent = IntervalHelper.toMinutesString(saldo);
     var classes = ['resultado'];
-    if (minutos < 0) {
+    if (saldo < 0) {
       classes.push('saldoNegativo');
     }
-    if (Math.abs(minutos) < MINUTOS_DE_TOLERANCIA) {
+    if (saldoConsiderado === 0) {
       classes.push('saldoIgnorado')
     }
     if (this.tipo == 'E') {
