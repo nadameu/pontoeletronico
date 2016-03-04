@@ -89,41 +89,6 @@ function analisarRegistros() {
 
   var linhas = Array.prototype.slice.call(tabela.find('tbody tr:has(td)'));
   intervalo.analisarLinhas(linhas);
-/*
-  var datas = Object.keys(intervalo);
-  var indice = datas.length - 1;
-  var contagem = 0;
-  while (contagem <= PRESCRICAO && indice > -1) {
-    ++contagem;
-    var dataAtual = datas[indice];
-    var dia = intervalo[dataAtual];
-    if (dia.compensacao || (dia.falta && (dia instanceof DiaUtil))) {
-      contagem = 0;
-    } else if (dia.zerado) {
-      contagem = PRESCRICAO;
-      break;
-    }
-    --indice;
-  }
-  var dataAConsiderar = DateFactory.deslocarDias(dia.data, contagem - PRESCRICAO);
-  console.log(DateHelper.toLocaleDate(dataAConsiderar));
-  
-  for (var i = indice; i > -1; --i) {
-    var dia = intervalo[ datas[i] ];
-    dia.saldoConsiderado = 0;
-    if (contagem === PRESCRICAO) {
-      dia.motivo = 'Zerado';
-    } else {
-      dia.motivo = 'Prescrito';
-    }
-  }
-  
-  if (contagem > 0) {
-    intervalo.analisarCompensacoes(dataInicio, dataFim);
-  } else {
-    intervalo.analisarCompensacoes(dataAConsiderar, dataFim);
-  }
-  */
   intervalo.analisarCompensacoes(dataInicio, dataFim);
   intervalo.inserirLinhasEm(tbody);
   
@@ -132,15 +97,11 @@ function analisarRegistros() {
   var tabelaSaldo = saldo.parents('table:first');
   var aviso = $('<p style="font-family: Arial; color: #696969;">Ignorando diferenças inferiores a ' + MINUTOS_DE_TOLERANCIA + ' minutos de tolerância.</p>').css({textAlign: 'right', fontSize: '0.8em'});
   tabelaSaldo.after(aviso);
-  if (dataInicio.getTime() > intervalo.dataIdeal.getTime()) {
+  if (dataInicio.getTime() !== intervalo.dataIdeal.getTime()) {
     aviso.append('<br/><span style="color: #c33;">Para cálculo do saldo correto selecione como data de início:<br/>' + DateHelper.toDateExtenso(intervalo.dataIdeal) + '.</span>');
-  } else if (dataInicio.getTime() < intervalo.dataConsiderada.getTime()) {
-    aviso.append('<br/>Considerando apenas registros a partir de ' + DateHelper.toLocaleDate(intervalo.dataConsiderada.getTime()));
-    if (intervalo.dataConsiderada.getTime() !== intervalo.dataIdeal.getTime()) {
-      aviso.append(' (saldo zerado).');
-    } else {
-      aviso.append(' (' + PRESCRICAO +' dias de prescrição).');
-    }
+  }
+  if (dataInicio.getTime() < intervalo.dataConsiderada.getTime()) {
+    aviso.append('<br/>(MANTER???) Considerando apenas registros a partir de ' + DateHelper.toLocaleDate(intervalo.dataConsiderada.getTime()) + '.');
   }
     
   definirDiasTrabalhados(intervalo.diasUteis, intervalo.diasUteisTrabalhados, intervalo.feriados, intervalo.feriadosTrabalhados);
@@ -375,72 +336,107 @@ Intervalo.prototype = Object.create(null, {
   analisarCompensacoes: {
     value: function(inicio, fim) {
       var datas = Object.keys(this);
-      var contagemPrescricao = PRESCRICAO;
-      var dataIdeal, dataConsiderada;
-      for (var indice = datas.length - 1; contagemPrescricao > -1 && indice > -1; --indice) {
+
+      var dataIdeal = DateFactory.deslocarDias(fim, -PRESCRICAO);
+      var dataConsiderada = dataIdeal;
+      
+      var zerado = false;
+      for (var indice = datas.length - 1; indice > -1; --indice) {
         var dia = this[ datas[indice] ];
-        if (dia.compensacao || (dia.falta && (dia instanceof DiaUtil))) {
-          contagemPrescricao = PRESCRICAO;
+        if (dia.data.getTime() < dataIdeal.getTime()) {
+          break;
+        } else if (dia.compensacao || (dia.falta && (dia instanceof DiaUtil))) {
+          dataIdeal = DateFactory.deslocarDias(dia.data, -PRESCRICAO);
         } else if (dia.zerado) {
-          contagemPrescricao = -2;
           dataIdeal = dia.data;
           dataConsiderada = DateFactory.diaSeguinte(dia.data);
+          zerado = true;
           break;
-        } else {
-          --contagemPrescricao;
         }
       }
-      if (contagemPrescricao === -1) {
-        dataIdeal = dataConsiderada = dia.data;
-      } else if (indice === -1) {
-        ++contagemPrescricao;
-        dataConsiderada = dia.data;
-        dataIdeal = DateFactory.deslocarDias(dataConsiderada, -contagemPrescricao);
+      if (dataConsiderada.getTime() < inicio.getTime()) {
+        dataConsiderada = inicio;
       }
+
       this.dataIdeal = dataIdeal;
       this.dataConsiderada = dataConsiderada;
-      return;
       
-      var indice, indiceCompensacao;
-      indice = indiceCompensacao = datas.indexOf(DateHelper.toISODate(inicio));
+      for (var indice = 0, indiceDataIdeal = datas.indexOf(DateHelper.toISODate(dataIdeal)); indice < indiceDataIdeal; ++indice) {
+        var dia = this[ datas[indice] ];
+        dia.saldoConsiderado = 0;
+        dia.motivo = zerado ? 'Zerado' : 'Prescrito';
+      }
+      if (zerado) {
+        var dia = this[ datas[indice++] ];
+        dia.saldoConsiderado = 0;
+        dia.motivo = 'Zerado';
+      }
+      
+      var indiceDataConsiderada = datas.indexOf(DateHelper.toISODate(dataConsiderada));
+      var indiceCompensacao = indice;
+      
       for (var len = datas.length; indice < len; ++indice) {
+        
+        if (indiceCompensacao + PRESCRICAO === indice - 1) {
+          var diaCompensacao = this[ datas[indiceCompensacao++] ];
+          console.log(DateHelper.toLocaleDate(diaCompensacao.data), 'antigamente "' + diaCompensacao.motivo + '", prescreveu.');
+          diaCompensacao.saldoConsiderado = 0;
+          diaCompensacao.motivo = 'Prescrito';
+        }
+        
         var dataAtual = datas[indice];
         var dia = this[dataAtual];
 //        if (dia.compensacao || (dia.falta && (dia instanceof DiaUtil))) {
         if (dia.saldoConsiderado < 0) {
-          console.log('data a compensar:', DateHelper.toLocaleDate(dia.data));
-          console.log('dias entre última compensação e hoje:', indice - indiceCompensacao);
+          console.log('*** Data a compensar:', DateHelper.toLocaleDate(dia.data), ', saldo:', dia.saldoConsiderado / 1000);
           var saldo = dia.saldoConsiderado;
-//          for (; saldo < 0 && indiceCompensacao < indice; ++indiceCompensacao) {
-          for (; saldo < 0 && indiceCompensacao < len; ++indiceCompensacao) {
+          for (var limite = Math.min(indice + PRESCRICAO + 1, len); indiceCompensacao < len; ++indiceCompensacao) {
             var dataCompensacao = datas[indiceCompensacao];
             var diaCompensacao = this[dataCompensacao];
             if (diaCompensacao.saldoConsiderado > 0) {
               var diminuir = Math.min(diaCompensacao.saldoConsiderado, -saldo);
 
               saldo += diminuir;
-              dia.motivo = 'Parcialmente compensado';
+              if (indice < indiceDataConsiderada) {
+                dia.motivo = 'Parcialmente compensado, prescrito';
+              } else {
+                dia.motivo = 'Parcialmente compensado, ' + IntervalHelper.toMinutesString(saldo) + ' restante';
+              }
 
               diaCompensacao.saldoConsiderado -= diminuir;
               if (diaCompensacao.saldoConsiderado == 0) {
-                diaCompensacao.motivo = 'Compensado';
-                console.log('Dia', DateHelper.toLocaleDate(diaCompensacao.data),'colaborou.');
+                if (indiceCompensacao < indiceDataConsiderada) {
+                  diaCompensacao.motivo = 'Compensado, prescrito';
+                } else {
+                  diaCompensacao.motivo = 'Compensado';
+                }
+                console.log('Dia', DateHelper.toLocaleDate(diaCompensacao.data), indiceCompensacao - indice, 'dias de distância, colaborou. Novo saldo:', saldo / 1000);
               } else {
-                diaCompensacao.motivo = 'Parcialmente compensado';
-                console.log('Dia', DateHelper.toLocaleDate(diaCompensacao.data),'compensou integralmente.');
+                if (indiceCompensacao < indiceDataConsiderada) {
+                  diaCompensacao.motivo = 'Parcialmente compensado, prescrito';
+                } else {
+                  diaCompensacao.motivo = 'Parcialmente compensado, ' + IntervalHelper.toMinutesString(diaCompensacao.saldoConsiderado) + ' restante';
+                }
+                console.log('Dia', DateHelper.toLocaleDate(diaCompensacao.data), indiceCompensacao - indice, 'dias de distância, compensou integralmente.');
                 break;
               }
             }
           }
           dia.saldoConsiderado = saldo;
           if (saldo === 0) {
-            dia.motivo = 'Compensado';
+            if (indice < indiceDataConsiderada) {
+              dia.motivo = 'Compensado, prescrito';
+            } else {
+              dia.motivo = 'Compensado';
+            }
           }
         }
       }
-      for (; indiceCompensacao < len; ++indiceCompensacao) {
-        console.log('implementar prescrição dos remanescentes');
-        
+      for (; indiceCompensacao < indiceDataConsiderada; ++indiceCompensacao) {
+        var diaCompensacao = this[ datas[indiceCompensacao] ];
+        console.log(DateHelper.toLocaleDate(diaCompensacao.data), 'antigamente "' + diaCompensacao.motivo + '", prescreveu.');
+        diaCompensacao.saldoConsiderado = 0;
+        diaCompensacao.motivo = 'Prescrito';
       }
     }
   },
