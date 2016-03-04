@@ -29,12 +29,12 @@
     <div class="container">
       <section id="main_content">
         <h1>
-<a id="ponto-eletrônico" class="anchor" href="#ponto-eletr%C3%B4nico" aria-hidden="true"><span class="octicon octicon-link"></span></a>Ponto eletrônico</h1>
+<a id="ponto-eletrônico" class="anchor" href="#ponto-eletr%C3%B4nico" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Ponto eletrônico</h1>
 
 <p>Este é um script de usuário para o complemento Greasemonkey, do Firefox, para facilitar a utilização do ponto eletrônico da JFPR.</p>
 
 <h2>
-<a id="instalação" class="anchor" href="#instala%C3%A7%C3%A3o" aria-hidden="true"><span class="octicon octicon-link"></span></a>Instalação</h2>
+<a id="instalação" class="anchor" href="#instala%C3%A7%C3%A3o" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Instalação</h2>
 
 <p>É necessário utilizar o Mozilla Firefox com o complemento Greasemonkey instalado.</p>
 
@@ -46,13 +46,17 @@ Se necessário, reinicie o Firefox após a instalação.</p>
 <p>Após instalado, o script será atualizado automaticamente sempre que houver uma versão nova.</p>
 
 <h2>
-<a id="utilização" class="anchor" href="#utiliza%C3%A7%C3%A3o" aria-hidden="true"><span class="octicon octicon-link"></span></a>Utilização</h2>
+<a id="utilização" class="anchor" href="#utiliza%C3%A7%C3%A3o" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Utilização</h2>
 
 <p>No sistema de ponto eletrônico da JFPR, na tela de relatório, selecionar as datas desejadas.</p>
 
-<p>O script calcula automaticamente o saldo de horas, dia a dia, e descarta diferenças inferiores a 15 minutos de tolerância para o cálculo do saldo total do período.</p>
+<p>O script informa a data inicial que deve ser selecionada, com base na prescrição das horas não utilizadas — 90 (noventa) dias.</p>
+
+<p>É calculado o saldo de horas com base nas compensações realizadas e nas prescrições, descartando-se diferenças inferiores a 15 minutos de tolerância por dia (para mais ou para menos).</p>
 
 <p>Eventuais erros de preenchimento — duas entradas ou duas saídas seguidas, dias com apenas um registro ou três (entrada-saída-entrada) — serão destacados com um fundo vermelho.</p>
+
+<p>O script também destaca as ocasiões em que houve alteração de horário após o registro inicial.</p>
       </section>
     </div>
 
