@@ -4,7 +4,7 @@
 // @description Relatório de ponto eletrônico
 // @require     https://code.jquery.com/jquery-2.1.1.min.js
 // @include     http://apl.jfpr.gov.br/pe/App_View/relatorio_1.aspx
-// @version     11
+// @version     12
 // @grant       none
 // ==/UserScript==
 
@@ -353,13 +353,13 @@ Intervalo.prototype = Object.create(null, {
         var dia = this[ datas[indice] ];
         if (dia.data.getTime() < dataIdeal.getTime()) {
           break;
-        } else if (dia.compensacao || (dia.falta && (dia instanceof DiaUtil))) {
-          dataIdeal = DateFactory.deslocarDias(dia.data, -PRESCRICAO);
         } else if (dia.zerado) {
           dataIdeal = dia.data;
           dataConsiderada = DateFactory.diaSeguinte(dia.data);
           zerado = true;
           break;
+        } else if (dia.compensacao || (dia.falta && (dia instanceof DiaUtil))) {
+          dataIdeal = DateFactory.deslocarDias(dia.data, -PRESCRICAO);
         }
       }
       if (dataConsiderada.getTime() < inicio.getTime()) {
@@ -428,11 +428,7 @@ Intervalo.prototype = Object.create(null, {
           var compensouTudo = saldo === 0;
           dia.saldoConsiderado = saldo;
           dia.motivo |= compensouAlgo ? (compensouTudo ? Motivos.COMPENSADO : Motivos.PARCIALMENTE_COMPENSADO) : 0;
-          console.log(
-            '===',
-            DateHelper.toLocaleDate(dia.data),
-            dia.saldoConsiderado / 1000
-          );
+          console.log('===', DateHelper.toLocaleDate(dia.data), dia.saldoConsiderado / 1000);
           
         }
         dia.motivo |= (indice < indiceDataConsiderada) ? Motivos.PRESCRITO : 0;
