@@ -12,7 +12,7 @@
 
 var MINUTOS_DE_TOLERANCIA = 15;
 var PRESCRICAO = 90;
-var FERIADOS = {};
+var Feriados = {};
 
 $(function() {
   $('head').append('<style>' + [
@@ -40,7 +40,6 @@ window.XMLHttpRequest = function () {
           analisarRegistros();
         } catch (ex) {
           // Não está na tela que desejamos
-          throw ex;
         }
       }
     };
@@ -59,7 +58,7 @@ function analisarCalendario(id) {
   tabela.find('td[style="color:Red;width:14%;"] a[href]').each(function (indiceLink, link) {
     var diasDesdeDoisMil = Number(/','(\d+)'\)/.exec(link.href)[1]);
     var data = DateHelper.toISODate(DateFactory.diasDesdeDoisMil(diasDesdeDoisMil));
-    FERIADOS[data] = true;
+    Feriados[data] = true;
   });
 }
 
@@ -99,9 +98,6 @@ function analisarRegistros() {
   tabelaSaldo.after(aviso);
   if (dataInicio.getTime() !== intervalo.dataIdeal.getTime()) {
     aviso.append('<br/><span style="color: #c33;">Para cálculo do saldo correto selecione como data de início:<br/>' + DateHelper.toDateExtenso(intervalo.dataIdeal) + '.</span>');
-  }
-  if (dataInicio.getTime() < intervalo.dataConsiderada.getTime()) {
-    aviso.append('<br/>(MANTER???) Considerando apenas registros a partir de ' + DateHelper.toLocaleDate(intervalo.dataConsiderada.getTime()) + '.');
   }
     
   definirDiasTrabalhados(intervalo.diasUteis, intervalo.diasUteisTrabalhados, intervalo.feriados, intervalo.feriadosTrabalhados);
@@ -204,6 +200,18 @@ var IntervalHelper = {
   }
 };
 
+/*** ENUMS ***/
+
+var Motivos = {
+  MENOR_QUE_TOLERANCIA: 1,
+  ZERADO: 2,
+  PRESCRITO: 4,
+  PARCIALMENTE_UTILIZADO: 8,
+  UTILIZADO: 16,
+  PARCIALMENTE_COMPENSADO: 32,
+  COMPENSADO: 64
+};
+
 /*** CLASSES ***/
 
 function Dia(data) {
@@ -216,7 +224,7 @@ Dia.prototype = {
   data: null,
   falta: true,
   jornadaPadrao: 0,
-  motivo: '',
+  motivo: 0,
   registros: null,
   saldo: 0,
   saldoConsiderado: 0,
@@ -249,7 +257,7 @@ Dia.prototype = {
       this.saldo = this.trabalhado - this.jornadaPadrao;
       if (Math.abs(this.saldo) < MINUTOS_DE_TOLERANCIA * 60 * 1000) {
         this.saldoConsiderado = 0;
-        this.motivo = '<' + MINUTOS_DE_TOLERANCIA + 'min';
+        this.motivo |= Motivos.MENOR_QUE_TOLERANCIA;
       } else {
         this.saldoConsiderado = this.saldo;
       }
@@ -268,7 +276,7 @@ Dia.prototype = {
 };
 Dia.prototype.constructor = Dia;
 Dia.criar = function(data, textoData) {
-  if (textoData in FERIADOS || data.getDay() % 6 === 0) {
+  if (textoData in Feriados || data.getDay() % 6 === 0) {
     return new Feriado(data);
   } else {
     return new DiaUtil(data);
@@ -364,12 +372,12 @@ Intervalo.prototype = Object.create(null, {
       for (var indice = 0, indiceDataIdeal = datas.indexOf(DateHelper.toISODate(dataIdeal)); indice < indiceDataIdeal; ++indice) {
         var dia = this[ datas[indice] ];
         dia.saldoConsiderado = 0;
-        dia.motivo = zerado ? 'Zerado' : 'Prescrito';
+        dia.motivo |= zerado ? Motivos.ZERADO : Motivos.PRESCRITO;
       }
       if (zerado) {
         var dia = this[ datas[indice++] ];
         dia.saldoConsiderado = 0;
-        dia.motivo = 'Zerado';
+        dia.motivo |= Motivos.ZERADO;
       }
       
       var indiceDataConsiderada = datas.indexOf(DateHelper.toISODate(dataConsiderada));
@@ -379,16 +387,17 @@ Intervalo.prototype = Object.create(null, {
         
         if (indiceCompensacao + PRESCRICAO === indice - 1) {
           var diaCompensacao = this[ datas[indiceCompensacao++] ];
-          console.log(DateHelper.toLocaleDate(diaCompensacao.data), 'antigamente "' + diaCompensacao.motivo + '", prescreveu.');
+          if (diaCompensacao.saldoConsiderado !== 0) {
+            console.log('///', DateHelper.toLocaleDate(diaCompensacao.data), diaCompensacao.saldoConsiderado, 'prescrito em', DateHelper.toLocaleDate(dia.data));
+          }
           diaCompensacao.saldoConsiderado = 0;
-          diaCompensacao.motivo = 'Prescrito';
+          diaCompensacao.motivo |= Motivos.PRESCRITO;
         }
         
         var dataAtual = datas[indice];
         var dia = this[dataAtual];
-//        if (dia.compensacao || (dia.falta && (dia instanceof DiaUtil))) {
         if (dia.saldoConsiderado < 0) {
-          console.log('*** Data a compensar:', DateHelper.toLocaleDate(dia.data), ', saldo:', dia.saldoConsiderado / 1000);
+          console.log('---', DateHelper.toLocaleDate(dia.data), dia.saldoConsiderado / 1000);
           var saldo = dia.saldoConsiderado;
           for (var limite = Math.min(indice + PRESCRICAO + 1, len); indiceCompensacao < limite; ++indiceCompensacao) {
             var dataCompensacao = datas[indiceCompensacao];
@@ -397,46 +406,42 @@ Intervalo.prototype = Object.create(null, {
               var diminuir = Math.min(diaCompensacao.saldoConsiderado, -saldo);
 
               saldo += diminuir;
-              if (indice < indiceDataConsiderada) {
-                dia.motivo = 'Parcialmente compensado, prescrito';
-              } else {
-                dia.motivo = 'Parcialmente compensado, ' + IntervalHelper.toMinutesString(saldo) + ' restante';
-              }
 
               diaCompensacao.saldoConsiderado -= diminuir;
-              if (diaCompensacao.saldoConsiderado === 0) {
-                if (indiceCompensacao < indiceDataConsiderada) {
-                  diaCompensacao.motivo = 'Compensado, prescrito';
-                } else {
-                  diaCompensacao.motivo = 'Compensado';
-                }
-                console.log('Dia', DateHelper.toLocaleDate(diaCompensacao.data), indiceCompensacao - indice, 'dias de distância, colaborou. Novo saldo:', saldo / 1000);
-              } else {
-                if (indiceCompensacao < indiceDataConsiderada) {
-                  diaCompensacao.motivo = 'Parcialmente compensado, prescrito';
-                } else {
-                  diaCompensacao.motivo = 'Parcialmente compensado, ' + IntervalHelper.toMinutesString(diaCompensacao.saldoConsiderado) + ' restante';
-                }
-                console.log('Dia', DateHelper.toLocaleDate(diaCompensacao.data), indiceCompensacao - indice, 'dias de distância, compensou integralmente.');
-                break;
-              }
+              var gastouTudo = diaCompensacao.saldoConsiderado === 0;
+              diaCompensacao.motivo &= ~Motivos.PARCIALMENTE_UTILIZADO;
+              diaCompensacao.motivo |= gastouTudo ? Motivos.UTILIZADO : Motivos.PARCIALMENTE_UTILIZADO;
+              diaCompensacao.motivo |= (indiceCompensacao < indiceDataConsiderada) ? Motivos.PRESCRITO : 0;
+              console.log(
+                '+++',
+                DateHelper.toLocaleDate(diaCompensacao.data),
+                (diaCompensacao.saldoConsiderado + diminuir) / 1000,
+                '-',
+                diminuir / 1000,
+                '=',
+                diaCompensacao.saldoConsiderado / 1000
+              );
+              if (! gastouTudo) break;
             }
           }
+          var compensouAlgo = dia.saldoConsiderado !== saldo;
+          var compensouTudo = saldo === 0;
           dia.saldoConsiderado = saldo;
-          if (saldo === 0) {
-            if (indice < indiceDataConsiderada) {
-              dia.motivo = 'Compensado, prescrito';
-            } else {
-              dia.motivo = 'Compensado';
-            }
-          }
+          dia.motivo |= compensouAlgo ? (compensouTudo ? Motivos.COMPENSADO : Motivos.PARCIALMENTE_COMPENSADO) : 0;
+          console.log(
+            '===',
+            DateHelper.toLocaleDate(dia.data),
+            dia.saldoConsiderado / 1000
+          );
+          
         }
+        dia.motivo |= (indice < indiceDataConsiderada) ? Motivos.PRESCRITO : 0;
       }
       for (; indiceCompensacao < indiceDataConsiderada; ++indiceCompensacao) {
         var diaCompensacao = this[ datas[indiceCompensacao] ];
-        console.log(DateHelper.toLocaleDate(diaCompensacao.data), 'antigamente "' + diaCompensacao.motivo + '", prescreveu.');
+        console.log(DateHelper.toLocaleDate(diaCompensacao.data), 'prescreveu.');
         diaCompensacao.saldoConsiderado = 0;
-        diaCompensacao.motivo = 'Prescrito';
+        diaCompensacao.motivo |= Motivos.PRESCRITO;
       }
     }
   },
@@ -524,7 +529,32 @@ Registro.prototype = {
       classes.push('erro');
     }
     celula.className = classes.join(' ');
-    this.linha.insertCell().textContent = motivo;
+    var motivos = [];
+    if (motivo & Motivos.ZERADO) {
+      motivos.push('Zerado');
+    } else if ((motivo & (Motivos.MENOR_QUE_TOLERANCIA | Motivos.PRESCRITO)) === Motivos.MENOR_QUE_TOLERANCIA) {
+      if (saldo !== 0) motivos.push('<' + MINUTOS_DE_TOLERANCIA + 'min');
+    } else {
+      if (motivo & Motivos.COMPENSADO) {
+        motivos.push('Compensado');
+      } else if (motivo & Motivos.PARCIALMENTE_COMPENSADO) {
+        motivos.push('Parcialmente compensado');
+        if ((motivo & Motivos.PRESCRITO) === 0) motivos.push('remanescente: ' + IntervalHelper.toMinutesString(saldoConsiderado));
+      } else if (motivo & Motivos.UTILIZADO) {
+        motivos.push('Utilizado');
+      } else if (motivo & Motivos.PARCIALMENTE_UTILIZADO) {
+        motivos.push('Parcialmente utilizado');
+        if ((motivo & Motivos.PRESCRITO) === 0) motivos.push('remanescente: ' + IntervalHelper.toMinutesString(saldoConsiderado));
+      }
+      if (motivo & Motivos.PRESCRITO) {
+        if (motivos.length === 0) {
+          motivos.push('Prescrito');
+        } else {
+          motivos.push('prescrito');
+        }
+      }
+    }
+    this.linha.insertCell().textContent = motivos.join(', ');
   }
 };
 Registro.prototype.constructor = Registro;
