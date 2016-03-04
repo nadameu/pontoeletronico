@@ -45,7 +45,7 @@ window.XMLHttpRequest = function () {
       }
     };
     return oldXHR.prototype.send.apply(xhr, arguments);
-  }
+  };
   return xhr;
 };
 
@@ -84,7 +84,7 @@ function analisarRegistros() {
   tabela.find('tbody tr:has(th):not(:has(#tituloColunaSaldo))').each(function(indiceLinha, linha) {
     linha.cells[3].textContent = 'Justificativa';
     linha.deleteCell(4);
-    $(linha).append('<th id="tituloColunaSaldo">Saldo</th><th>Motivo</th>')
+    $(linha).append('<th id="tituloColunaSaldo">Saldo</th><th>Motivo</th>');
   });
 
   var linhas = Array.prototype.slice.call(tabela.find('tbody tr:has(td)'));
@@ -148,11 +148,11 @@ function definirDiasTrabalhados(diasUteis, diasUteisTrabalhados, diasNaoUteis, d
 
 var DateFactory = {
   dataHoraTexto: function(texto) {
-    var [trash, d, m, y, h, i, s] = /(\d+)\/(\d+)\/(\d+) (\d+):(\d+):(\d+)/.exec(texto);
+    var [, d, m, y, h, i, s] = /(\d+)\/(\d+)\/(\d+) (\d+):(\d+):(\d+)/.exec(texto);
     return new Date(y, m - 1, d, h, i, s, 0);
   },
   dataTexto: function(texto) {
-    var [trash, d, m, y] = /(\d+)\/(\d+)\/(\d+)/.exec(texto);
+    var [, d, m, y] = /(\d+)\/(\d+)\/(\d+)/.exec(texto);
     return DateFactory.dmy(d, m, y);
   },
   deslocarDias: function(data, dias) {
@@ -390,7 +390,7 @@ Intervalo.prototype = Object.create(null, {
         if (dia.saldoConsiderado < 0) {
           console.log('*** Data a compensar:', DateHelper.toLocaleDate(dia.data), ', saldo:', dia.saldoConsiderado / 1000);
           var saldo = dia.saldoConsiderado;
-          for (var limite = Math.min(indice + PRESCRICAO + 1, len); indiceCompensacao < len; ++indiceCompensacao) {
+          for (var limite = Math.min(indice + PRESCRICAO + 1, len); indiceCompensacao < limite; ++indiceCompensacao) {
             var dataCompensacao = datas[indiceCompensacao];
             var diaCompensacao = this[dataCompensacao];
             if (diaCompensacao.saldoConsiderado > 0) {
@@ -404,7 +404,7 @@ Intervalo.prototype = Object.create(null, {
               }
 
               diaCompensacao.saldoConsiderado -= diminuir;
-              if (diaCompensacao.saldoConsiderado == 0) {
+              if (diaCompensacao.saldoConsiderado === 0) {
                 if (indiceCompensacao < indiceDataConsiderada) {
                   diaCompensacao.motivo = 'Compensado, prescrito';
                 } else {
@@ -518,7 +518,7 @@ Registro.prototype = {
       classes.push('saldoNegativo');
     }
     if (saldoConsiderado === 0) {
-      classes.push('saldoIgnorado')
+      classes.push('saldoIgnorado');
     }
     if (this.tipo == 'E') {
       classes.push('erro');
