@@ -4,7 +4,7 @@
 // @description Relatório de ponto eletrônico
 // @require     https://code.jquery.com/jquery-2.1.1.min.js
 // @include     http://apl.jfpr.gov.br/pe/App_View/relatorio_1.aspx
-// @version     12
+// @version     13
 // @grant       none
 // ==/UserScript==
 
@@ -260,6 +260,7 @@ Dia.prototype = {
         this.motivo |= Motivos.MENOR_QUE_TOLERANCIA;
       } else {
         this.saldoConsiderado = this.saldo;
+        this.motivo &= ~Motivos.MENOR_QUE_TOLERANCIA;
       }
     }
     if (registro.dataHora.getTime() !== registro.alteracao.dataHora.getTime()) {
@@ -427,6 +428,7 @@ Intervalo.prototype = Object.create(null, {
           var compensouAlgo = dia.saldoConsiderado !== saldo;
           var compensouTudo = saldo === 0;
           dia.saldoConsiderado = saldo;
+          dia.motivo &= ~Motivos.PARCIALMENTE_COMPENSADO;
           dia.motivo |= compensouAlgo ? (compensouTudo ? Motivos.COMPENSADO : Motivos.PARCIALMENTE_COMPENSADO) : 0;
           console.log('===', DateHelper.toLocaleDate(dia.data), dia.saldoConsiderado / 1000);
           
