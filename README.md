@@ -1,7 +1,7 @@
 Ponto eletrônico
 ================
 
-Este é um script de usuário para o complemento Greasemonkey, do Firefox, para facilitar a utilização do ponto eletrônico da JFPR.
+Este é um script de usuário para o complemento Greasemonkey, do Firefox, para facilitar a utilização do _sistema antigo_ de ponto eletrônico da JFPR (http://apl.jfpr.gov.br/pe/).
 
 Instalação
 ----------
